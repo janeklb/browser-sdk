@@ -1147,15 +1147,14 @@
     npmlog "^4.1.2"
     write-file-atomic "^3.0.3"
 
-"@mantine/core@4.0.9":
-  version "4.0.9"
-  resolved "https://registry.yarnpkg.com/@mantine/core/-/core-4.0.9.tgz#c799a9441a67812da80fa25cca84f37209701dbe"
-  integrity sha512-x7qEnot6dUqstby8G3Hn06zH39sAzC610qEUUThsw1a/UFJvHjr+UONcfDkBGX3XzcgsgOLn/HnOksUHE349fg==
+"@mantine/core@4.1.2":
+  version "4.1.2"
+  resolved "https://registry.yarnpkg.com/@mantine/core/-/core-4.1.2.tgz#741bb313ebf4cbbe0b6802aa29f5beb4a1f7296f"
+  integrity sha512-7P3dhcTkA6zod7L9kSlIpEr4IcHX31LqFetbmoD/q8TqxBVBS2ckNYTwQaH5o446j2ORKrPZ0r28xBCI+lib8Q==
   dependencies:
-    "@mantine/styles" "4.0.9"
+    "@mantine/styles" "4.1.2"
     "@popperjs/core" "^2.9.3"
     "@radix-ui/react-scroll-area" "^0.1.1"
-    clsx "^1.1.1"
     react-popper "^2.2.5"
     react-textarea-autosize "^8.3.2"
 
@@ -1164,10 +1163,10 @@
   resolved "https://registry.yarnpkg.com/@mantine/hooks/-/hooks-4.0.9.tgz#63af01e64955f8589f037fdab414f6c62223da98"
   integrity sha512-b+IrevT05/nAM2H0iKWC9BP0gr/U8kF3U8Ge+EnvSFeSOWp/exm/Wy5toorQ83nQbmfCjkSAL5WDb6Jx0gI/Fg==
 
-"@mantine/styles@4.0.9":
-  version "4.0.9"
-  resolved "https://registry.yarnpkg.com/@mantine/styles/-/styles-4.0.9.tgz#81a5c7a8810fe663b952eea94de154963dff7361"
-  integrity sha512-pZIJ4lAl0RDbIYosJEJpEv2iYutlIDMlgoCOac32jB3GkY1iPu2mZjVTp5/aySLI1e/2hb0Pb+kHM58nnG82wA==
+"@mantine/styles@4.1.2":
+  version "4.1.2"
+  resolved "https://registry.yarnpkg.com/@mantine/styles/-/styles-4.1.2.tgz#81440bb8fc72fb3d05df1e7779d8326d2c6c297f"
+  integrity sha512-HcBrmKzEV7jbBBxicnHUl/Ol/eS5hrZ4lt4hpoi/yD/VVx0BHolK4LkiHCvoh9vFHHN2o9gQo236LgHbqYMEGA==
   dependencies:
     "@emotion/cache" "^11.7.1"
     "@emotion/react" "^11.7.1"
@@ -4422,10 +4421,10 @@ eslint-plugin-prefer-arrow@1.2.3:
   resolved "https://registry.yarnpkg.com/eslint-plugin-prefer-arrow/-/eslint-plugin-prefer-arrow-1.2.3.tgz#e7fbb3fa4cd84ff1015b9c51ad86550e55041041"
   integrity sha512-J9I5PKCOJretVuiZRGvPQxCbllxGAV/viI20JO3LYblAodofBxyMnZAJ+WGeClHgANnSJberTNoFWWjrWKBuXQ==
 
-eslint-plugin-unicorn@41.0.1:
-  version "41.0.1"
-  resolved "https://registry.yarnpkg.com/eslint-plugin-unicorn/-/eslint-plugin-unicorn-41.0.1.tgz#b49205b38e71e227d21fb5776f8d078a1dc637ca"
-  integrity sha512-gF5vo2dIj0YdNMQ/IMegiBkQdQ22GBFFVpdkJP+0og3w7XD4ypea0xQVRv6iofkLVR2w0phAdikcnU01ybd4Ow==
+eslint-plugin-unicorn@42.0.0:
+  version "42.0.0"
+  resolved "https://registry.yarnpkg.com/eslint-plugin-unicorn/-/eslint-plugin-unicorn-42.0.0.tgz#47d60c00c263ad743403b052db689e39acbacff1"
+  integrity sha512-ixBsbhgWuxVaNlPTT8AyfJMlhyC5flCJFjyK3oKE8TRrwBnaHvUbuIkCM1lqg8ryYrFStL/T557zfKzX4GKSlg==
   dependencies:
     "@babel/helper-validator-identifier" "^7.15.7"
     ci-info "^3.3.0"
