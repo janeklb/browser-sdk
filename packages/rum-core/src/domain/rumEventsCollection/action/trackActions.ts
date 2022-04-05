@@ -1,5 +1,6 @@
 import type { Context, Duration, ClocksState, RelativeTime, TimeStamp, Subscription } from '@datadog/browser-core'
 import {
+  timeStampNow,
   Observable,
   assign,
   isExperimentalFeatureEnabled,
@@ -279,8 +280,9 @@ function addClickToClickChain(state: TrackActionsState, singleClickPotentialActi
   let clickReference = state.currentClickChain && state.currentClickChain.tryAppend(click)
   // If we failed to add the click to the current click chain, create a new click chain
   if (!clickReference) {
+    const rageClickPotentialAction = newPotentialAction(state, singleClickPotentialAction.base)
     const newClickChain = createClickChain<ActionClick>((clicks) => {
-      flushClickChain(clicks)
+      flushClickChain(clicks, rageClickPotentialAction)
       stopSubscription.unsubscribe()
     })
     const stopSubscription = state.stopObservable.subscribe(newClickChain.stop)
@@ -291,7 +293,29 @@ function addClickToClickChain(state: TrackActionsState, singleClickPotentialActi
   return clickReference
 }
 
-function flushClickChain(clicks: ActionClick[]) {
-  // Send an action for each individual click
-  clicks.forEach((click) => click.singleClickPotentialAction.notifyIfComplete())
+function flushClickChain(clicks: ActionClick[], rageClickPotentialAction: PotentialAction) {
+  if (isRage(clicks)) {
+    // Merge any click frustration to the rage click action. In practice, it only concerns
+    // 'dead', because any potential 'error' frustration will already be there (as potential action
+    // collect it themselves), and 'rage' won't be on single click potential actions.
+    clicks.forEach((click) => {
+      click.singleClickPotentialAction.frustrations.forEach((frustration) =>
+        rageClickPotentialAction.frustrations.add(frustration)
+      )
+    })
+    // Send the rage click action
+    rageClickPotentialAction.frustrations.add(FrustrationType.RAGE)
+    rageClickPotentialAction.complete(timeStampNow())
+    rageClickPotentialAction.notifyIfComplete()
+  } else {
+    rageClickPotentialAction.discard()
+    // Send an action for each individual click
+    clicks.forEach((click) => click.singleClickPotentialAction.notifyIfComplete())
+  }
+}
+
+const RAGE_CLICK_MIN_COUNT = 3
+function isRage(clicks: ActionClick[]) {
+  // TODO: this condition should be improved to avoid reporting 3-click selection as rage click
+  return clicks.length >= RAGE_CLICK_MIN_COUNT
 }
