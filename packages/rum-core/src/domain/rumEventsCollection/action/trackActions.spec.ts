@@ -326,8 +326,9 @@ describe('trackActions', () => {
     target.dispatchEvent(
       createNewEvent('click', {
         target,
-        clientX: targetPosition.x + targetPosition.width / 2,
-        clientY: targetPosition.y + targetPosition.height / 2,
+        clientX: targetPosition.left + targetPosition.width / 2,
+        clientY: targetPosition.top + targetPosition.height / 2,
+        timeStamp: timeStampNow(),
       })
     )
   }
