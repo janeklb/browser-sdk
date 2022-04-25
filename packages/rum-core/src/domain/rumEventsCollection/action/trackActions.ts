@@ -1,13 +1,8 @@
-import type {
-  Context,
-  Duration,
-  ClocksState,
-  Observable,
-  TimeStamp,
-  RelativeTime,
-  Subscription,
-} from '@datadog/browser-core'
+import type { Context, Duration, ClocksState, RelativeTime, TimeStamp, Subscription } from '@datadog/browser-core'
 import {
+  noop,
+  Observable,
+  assign,
   isExperimentalFeatureEnabled,
   getRelativeTime,
   ONE_MINUTE,
@@ -19,17 +14,19 @@ import {
   ONE_SECOND,
   elapsed,
 } from '@datadog/browser-core'
-import { ActionType } from '../../../rawRumEvent.types'
+import { FrustrationType, ActionType } from '../../../rawRumEvent.types'
 import type { RumConfiguration } from '../../configuration'
 import type { LifeCycle } from '../../lifeCycle'
 import { LifeCycleEventType } from '../../lifeCycle'
 import { trackEventCounts } from '../../trackEventCounts'
 import { waitIdlePage } from '../../waitIdlePage'
+import type { RageClickChain } from './rageClickChain'
+import { createRageClickChain } from './rageClickChain'
 import { getActionNameFromElement } from './getActionNameFromElement'
 
 type AutoActionType = ActionType.CLICK
 
-export interface ActionCounts {
+interface ActionCounts {
   errorCount: number
   longTaskCount: number
   resourceCount: number
@@ -47,14 +44,10 @@ export interface AutoAction {
   id: string
   name: string
   startClocks: ClocksState
-  duration: Duration
+  duration?: Duration
   counts: ActionCounts
-  event: Event
-}
-
-export interface AutoActionCreatedEvent {
-  id: string
-  startClocks: ClocksState
+  event: MouseEvent
+  frustrationTypes: FrustrationType[]
 }
 
 export interface ActionContexts {
@@ -65,142 +58,237 @@ export interface ActionContexts {
 export const AUTO_ACTION_MAX_DURATION = 10 * ONE_SECOND
 export const ACTION_CONTEXT_TIME_OUT_DELAY = 5 * ONE_MINUTE // arbitrary
 
-interface ActionController {
-  id: string
-  startClocks: ClocksState
-  discard(): void
-}
-
 export function trackActions(
   lifeCycle: LifeCycle,
   domMutationObservable: Observable<void>,
   { actionNameAttribute }: RumConfiguration
 ) {
-  const history = new ContextHistory<ActionController>(ACTION_CONTEXT_TIME_OUT_DELAY)
+  // TODO: this will be changed when we introduce a proper initialization parameter for it
+  const collectFrustrations = isExperimentalFeatureEnabled('frustration-signals')
+  const history = new ContextHistory<string>(ACTION_CONTEXT_TIME_OUT_DELAY)
+  const stopObservable = new Observable<void>()
+  let currentRageClickChain: RageClickChain | undefined
 
   lifeCycle.subscribe(LifeCycleEventType.SESSION_RENEWED, () => {
     history.reset()
   })
 
-  const { stop: stopListener } = listenEvents((event) => {
-    if (!isExperimentalFeatureEnabled('frustration-signals') && history.find()) {
-      // Ignore any new action if another one is already occurring.
-      return
+  lifeCycle.subscribe(LifeCycleEventType.BEFORE_UNLOAD, () => {
+    if (currentRageClickChain) {
+      currentRageClickChain.stop()
     }
-    const name = getActionNameFromElement(event.target, actionNameAttribute)
-    if (!name) {
-      return
-    }
-    const actionController = newAction(
-      lifeCycle,
-      domMutationObservable,
-      ActionType.CLICK,
-      name,
-      event,
-      (endTime) => {
-        historyEntry.close(getRelativeTime(endTime))
-      },
-      () => {
-        historyEntry.remove()
-      }
-    )
-    const historyEntry = history.add(actionController, actionController.startClocks.relative)
   })
+
+  const { stop: stopListener } = listenClickEvents(onClick)
 
   const actionContexts: ActionContexts = {
     findActionId: (startTime?: RelativeTime) =>
-      isExperimentalFeatureEnabled('frustration-signals')
-        ? history.findAll(startTime).map((controller) => controller.id)
-        : history.find(startTime)?.id,
+      isExperimentalFeatureEnabled('frustration-signals') ? history.findAll(startTime) : history.find(startTime),
   }
 
   return {
     stop: () => {
-      history.findAll().forEach((actionController) => actionController.discard())
+      if (currentRageClickChain) {
+        currentRageClickChain.stop()
+      }
+      stopObservable.notify()
       stopListener()
     },
     actionContexts,
   }
+
+  function onClick(event: MouseEvent & { target: Element }) {
+    if (!collectFrustrations && history.find()) {
+      // TODO: remove this in a future major version. To keep retrocompatibility, ignore any new
+      // action if another one is already occurring.
+      return
+    }
+
+    const name = getActionNameFromElement(event.target, actionNameAttribute)
+    if (!collectFrustrations && !name) {
+      // TODO: remove this in a future major version. To keep retrocompatibility, ignore any action
+      // with a blank name
+      return
+    }
+
+    const startClocks = clocksNow()
+
+    const singleClickPotentialAction = newPotentialAction(lifeCycle, history, collectFrustrations, {
+      name,
+      event,
+      type: ActionType.CLICK as const,
+      startClocks,
+    })
+
+    // If we collect frustration, we have to add the click action to a "click chain" which will
+    // validate it only if it's not part of a rage click.
+    if (
+      collectFrustrations &&
+      (!currentRageClickChain || !currentRageClickChain.tryAppend(singleClickPotentialAction))
+    ) {
+      // If we failed to add the click to the current click chain, create a new click chain
+      currentRageClickChain = createRageClickChain(singleClickPotentialAction)
+    }
+
+    const { stop: stopWaitingIdlePage } = waitIdlePage(
+      lifeCycle,
+      domMutationObservable,
+      (idleEvent) => {
+        if (!idleEvent.hadActivity) {
+          // If it has no activity, consider it as a dead click.
+          // TODO: this will yield a lot of false positive. We'll need to refine it in the future.
+          if (collectFrustrations) {
+            singleClickPotentialAction.addFrustration(FrustrationType.DEAD)
+            singleClickPotentialAction.stop()
+          } else {
+            singleClickPotentialAction.discard()
+          }
+        } else if (idleEvent.end < startClocks.timeStamp) {
+          // If the clock is looking weird, just discard the action
+          singleClickPotentialAction.discard()
+        } else if (collectFrustrations) {
+          // If we collect frustrations, let's stop the potential action, but validate later
+          singleClickPotentialAction.stop(idleEvent.end)
+        } else {
+          // Else just validate it now
+          singleClickPotentialAction.validate(idleEvent.end)
+        }
+        stopClickProcessing()
+      },
+      AUTO_ACTION_MAX_DURATION
+    )
+
+    let viewCreatedSubscription: Subscription | undefined
+    if (!collectFrustrations) {
+      // TODO: remove this in a future major version. To keep retrocompatibility, end the action on a
+      // new view is created.
+      viewCreatedSubscription = lifeCycle.subscribe(LifeCycleEventType.VIEW_CREATED, stopClickProcessing)
+    }
+
+    const stopSubscription = stopObservable.subscribe(stopClickProcessing)
+
+    function stopClickProcessing() {
+      // Cleanup any ongoing process
+      singleClickPotentialAction.stop()
+      if (viewCreatedSubscription) {
+        viewCreatedSubscription.unsubscribe()
+      }
+      stopWaitingIdlePage()
+      stopSubscription.unsubscribe()
+    }
+  }
 }
 
-function listenEvents(callback: (event: Event & { target: Element }) => void) {
+function listenClickEvents(callback: (clickEvent: MouseEvent & { target: Element }) => void) {
   return addEventListener(
     window,
     DOM_EVENT.CLICK,
-    (event) => {
-      if (event.target instanceof Element) {
-        callback(event as Event & { target: Element })
+    (clickEvent: MouseEvent) => {
+      if (clickEvent.target instanceof Element) {
+        callback(clickEvent as MouseEvent & { target: Element })
       }
     },
     { capture: true }
   )
 }
 
-function newAction(
+const enum PotentialActionStatus {
+  // Initial state, the action is still ongoing.
+  PENDING,
+  // The action is no more ongoing but still needs to be validated or discarded.
+  STOPPED,
+  // Final state, the action has been stopped and validated or discarded.
+  FINALIZED,
+}
+
+type PotentialActionState =
+  | { status: PotentialActionStatus.PENDING }
+  | { status: PotentialActionStatus.STOPPED; endTime?: TimeStamp }
+  | { status: PotentialActionStatus.FINALIZED }
+
+export type PotentialAction = ReturnType<typeof newPotentialAction>
+
+function newPotentialAction(
   lifeCycle: LifeCycle,
-  domMutationObservable: Observable<void>,
-  type: AutoActionType,
-  name: string,
-  event: Event,
-  onCompleteCallback: (endTime: TimeStamp) => void,
-  onDiscardCallback: () => void
-): ActionController {
+  history: ContextHistory<string>,
+  collectFrustrations: boolean,
+  base: Pick<AutoAction, 'startClocks' | 'event' | 'name' | 'type'>
+) {
   const id = generateUUID()
-  const startClocks = clocksNow()
+  const historyEntry = history.add(id, base.startClocks.relative)
   const eventCountsSubscription = trackEventCounts(lifeCycle)
-  const { stop: stopWaitingIdlePage } = waitIdlePage(
-    lifeCycle,
-    domMutationObservable,
-    (idleEvent) => {
-      if (idleEvent.hadActivity && startClocks.timeStamp <= idleEvent.end) {
-        complete(idleEvent.end)
-      } else {
-        discard()
-      }
-    },
-    AUTO_ACTION_MAX_DURATION
-  )
-  let viewCreatedSubscription: Subscription | undefined
-  if (!isExperimentalFeatureEnabled('frustration-signals')) {
-    // New views trigger the discard of the current pending Action
-    viewCreatedSubscription = lifeCycle.subscribe(LifeCycleEventType.VIEW_CREATED, discard)
-  }
+  let state: PotentialActionState = { status: PotentialActionStatus.PENDING }
+  const frustrations = new Set<FrustrationType>()
+  let onStopCallback = noop
 
-  function complete(endTime: TimeStamp) {
-    cleanup()
-    const eventCounts = eventCountsSubscription.eventCounts
-    lifeCycle.notify(LifeCycleEventType.AUTO_ACTION_COMPLETED, {
-      counts: {
-        errorCount: eventCounts.errorCount,
-        longTaskCount: eventCounts.longTaskCount,
-        resourceCount: eventCounts.resourceCount,
-      },
-      duration: elapsed(startClocks.timeStamp, endTime),
-      id,
-      name,
-      startClocks,
-      type,
-      event,
-    })
-    onCompleteCallback(endTime)
-  }
-
-  function discard() {
-    cleanup()
-    onDiscardCallback()
-  }
-
-  function cleanup() {
-    stopWaitingIdlePage()
+  function stop(endTime?: TimeStamp) {
+    if (state.status !== PotentialActionStatus.PENDING) {
+      return
+    }
+    state = { status: PotentialActionStatus.STOPPED, endTime }
+    if (endTime) {
+      historyEntry.close(getRelativeTime(endTime))
+    } else {
+      historyEntry.remove()
+    }
     eventCountsSubscription.stop()
-    if (viewCreatedSubscription) {
-      viewCreatedSubscription.unsubscribe()
+    onStopCallback()
+  }
+
+  function addFrustration(frustration: FrustrationType) {
+    if (collectFrustrations) {
+      frustrations.add(frustration)
     }
   }
 
   return {
-    discard,
-    id,
-    startClocks,
+    base,
+    addFrustration,
+    stop,
+
+    getFrustrations: () => frustrations,
+
+    onStop: (newOnStopCallback: () => void) => {
+      onStopCallback = newOnStopCallback
+    },
+
+    clone: () => newPotentialAction(lifeCycle, history, collectFrustrations, base),
+
+    validate: (endTime?: TimeStamp) => {
+      stop(endTime)
+      if (state.status !== PotentialActionStatus.STOPPED) {
+        return
+      }
+
+      if (eventCountsSubscription.eventCounts.errorCount > 0) {
+        addFrustration(FrustrationType.ERROR)
+      }
+
+      const frustrationTypes: FrustrationType[] = []
+      frustrations.forEach((frustration) => {
+        frustrationTypes.push(frustration)
+      })
+      const { resourceCount, errorCount, longTaskCount } = eventCountsSubscription.eventCounts
+      const action: AutoAction = assign(
+        {
+          duration: state.endTime && elapsed(base.startClocks.timeStamp, state.endTime),
+          id,
+          frustrationTypes,
+          counts: {
+            resourceCount,
+            errorCount,
+            longTaskCount,
+          },
+        },
+        base
+      )
+      lifeCycle.notify(LifeCycleEventType.AUTO_ACTION_COMPLETED, action)
+      state = { status: PotentialActionStatus.FINALIZED }
+    },
+
+    discard: () => {
+      stop()
+      state = { status: PotentialActionStatus.FINALIZED }
+    },
   }
 }
