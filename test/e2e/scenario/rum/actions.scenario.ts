@@ -128,4 +128,29 @@ describe('action collection', () => {
       expect(actionEvents.length).toBe(1)
       expect(actionEvents[0].action.frustration_type).toEqual(['dead'])
     })
+
+  createTest('collect a "rage click"')
+    .withRum({ trackInteractions: true, enableExperimentalFeatures: ['frustration-signals'] })
+    .withBody(
+      html`
+        <button>click me</button>
+        <script>
+          const button = document.querySelector('button')
+          button.addEventListener('click', () => {
+            button.setAttribute('data-clicked', Math.random())
+          })
+        </script>
+      `
+    )
+    .run(async ({ serverEvents }) => {
+      const button = await $('button')
+      await button.click()
+      await button.click()
+      await button.click()
+      await flushEvents()
+      const actionEvents = serverEvents.rumActions
+
+      expect(actionEvents.length).toBe(1)
+      expect(actionEvents[0].action.frustration_type).toEqual(['rage'])
+    })
 })
