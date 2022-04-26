@@ -9,7 +9,6 @@ import type { RumEvent } from '../../../rumEvent.types'
 import { LifeCycleEventType } from '../../lifeCycle'
 import { PAGE_ACTIVITY_VALIDATION_DELAY } from '../../waitIdlePage'
 import type { ActionContexts } from './actionCollection'
-import { MAX_DURATION_BETWEEN_CLICKS } from './rageClickChain'
 import type { AutoAction } from './trackActions'
 import { AUTO_ACTION_MAX_DURATION, trackActions } from './trackActions'
 
@@ -270,45 +269,6 @@ describe('trackActions', () => {
       expect(events.length).toBe(1)
     })
 
-    describe('rage clicks', () => {
-      it('considers a chain of three clicks or more as a single action with "rage" frustration type', () => {
-        const { domMutationObservable, clock } = setupBuilder.build()
-        const firstClickTimeStamp = timeStampNow()
-        const actionDuration = 5
-        emulateClickWithActivity(domMutationObservable, clock, undefined, actionDuration)
-        emulateClickWithActivity(domMutationObservable, clock, undefined, actionDuration)
-        emulateClickWithActivity(domMutationObservable, clock, undefined, actionDuration)
-
-        clock.tick(EXPIRE_DELAY)
-        expect(events.length).toBe(1)
-        expect(events[0].startClocks.timeStamp).toBe(firstClickTimeStamp)
-        expect(events[0].frustrationTypes).toEqual([FrustrationType.RAGE])
-        expect(events[0].duration).toBe((MAX_DURATION_BETWEEN_CLICKS + 2 * actionDuration) as Duration)
-      })
-
-      it('aggregates frustrationTypes from all clicks', () => {
-        const { lifeCycle, domMutationObservable, clock } = setupBuilder.build()
-
-        // Dead
-        emulateClickWithoutActivity()
-        clock.tick(PAGE_ACTIVITY_VALIDATION_DELAY)
-
-        // Error
-        emulateClickWithActivity(domMutationObservable, clock)
-        lifeCycle.notify(LifeCycleEventType.RUM_EVENT_COLLECTED, RAW_ERROR_EVENT)
-        clock.tick(PAGE_ACTIVITY_VALIDATION_DELAY)
-
-        // Third click to make a rage click
-        emulateClickWithActivity(domMutationObservable, clock)
-
-        clock.tick(EXPIRE_DELAY)
-        expect(events.length).toBe(1)
-        expect(events[0].frustrationTypes).toEqual(
-          jasmine.arrayWithExactContents([FrustrationType.DEAD, FrustrationType.ERROR, FrustrationType.RAGE])
-        )
-      })
-    })
-
     describe('error clicks', () => {
       it('considers a "click with activity" followed by an error as an action with "error" frustration type', () => {
         const { lifeCycle, domMutationObservable, clock } = setupBuilder.build()
@@ -366,9 +326,8 @@ describe('trackActions', () => {
     target.dispatchEvent(
       createNewEvent('click', {
         target,
-        clientX: targetPosition.left + targetPosition.width / 2,
-        clientY: targetPosition.top + targetPosition.height / 2,
-        timeStamp: timeStampNow(),
+        clientX: targetPosition.x + targetPosition.width / 2,
+        clientY: targetPosition.y + targetPosition.height / 2,
       })
     )
   }
