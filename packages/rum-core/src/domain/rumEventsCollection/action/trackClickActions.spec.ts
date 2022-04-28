@@ -9,13 +9,13 @@ import type { RumEvent } from '../../../rumEvent.types'
 import { LifeCycleEventType } from '../../lifeCycle'
 import { PAGE_ACTIVITY_VALIDATION_DELAY } from '../../waitIdlePage'
 import type { ActionContexts } from './actionCollection'
-import type { AutoAction } from './trackActions'
-import { AUTO_ACTION_MAX_DURATION, trackActions } from './trackActions'
+import type { ClickAction } from './trackClickActions'
+import { CLICK_ACTION_MAX_DURATION, trackClickActions } from './trackClickActions'
 
 // Used to wait some time after the creation of an action
 const BEFORE_PAGE_ACTIVITY_VALIDATION_DELAY = PAGE_ACTIVITY_VALIDATION_DELAY * 0.8
 // A long delay used to wait after any action is finished.
-const EXPIRE_DELAY = AUTO_ACTION_MAX_DURATION * 10
+const EXPIRE_DELAY = CLICK_ACTION_MAX_DURATION * 10
 
 function eventsCollector<T>() {
   const events: T[] = []
@@ -32,8 +32,8 @@ function eventsCollector<T>() {
 
 const RAW_ERROR_EVENT = { type: RumEventType.ERROR } as RumEvent & Context
 
-describe('trackActions', () => {
-  const { events, pushEvent } = eventsCollector<AutoAction>()
+describe('trackClickActions', () => {
+  const { events, pushEvent } = eventsCollector<ClickAction>()
   let button: HTMLButtonElement
   let emptyElement: HTMLHRElement
   let input: HTMLInputElement
@@ -57,9 +57,9 @@ describe('trackActions', () => {
       .withFakeClock()
       .beforeBuild(({ lifeCycle, domMutationObservable, configuration }) => {
         lifeCycle.subscribe(LifeCycleEventType.AUTO_ACTION_COMPLETED, pushEvent)
-        const trackActionsResult = trackActions(lifeCycle, domMutationObservable, configuration)
-        findActionId = trackActionsResult.actionContexts.findActionId
-        return { stop: trackActionsResult.stop }
+        const trackClickActionsResult = trackClickActions(lifeCycle, domMutationObservable, configuration)
+        findActionId = trackClickActionsResult.actionContexts.findActionId
+        return { stop: trackClickActionsResult.stop }
       })
   })
 
@@ -70,7 +70,7 @@ describe('trackActions', () => {
     setupBuilder.cleanup()
   })
 
-  it('starts an action when clicking on an element', () => {
+  it('starts a click action when clicking on an element', () => {
     const { domMutationObservable, clock } = setupBuilder.build()
     emulateClickWithActivity(domMutationObservable, clock)
     expect(findActionId()).not.toBeUndefined()
@@ -93,7 +93,7 @@ describe('trackActions', () => {
     ])
   })
 
-  it('discards a pending action with a negative duration', () => {
+  it('discards any pending click action with a negative duration', () => {
     const { domMutationObservable, clock } = setupBuilder.build()
     emulateClickWithActivity(domMutationObservable, clock, button, -1)
     expect(findActionId()).not.toBeUndefined()
@@ -103,16 +103,16 @@ describe('trackActions', () => {
     expect(findActionId()).toBeUndefined()
   })
 
-  it('should keep track of previously validated actions', () => {
+  it('should keep track of previously validated click actions', () => {
     const { domMutationObservable, clock } = setupBuilder.build()
+    const clickActionStartTime = relativeNow()
     emulateClickWithActivity(domMutationObservable, clock)
-    const actionStartTime = relativeNow()
     clock.tick(EXPIRE_DELAY)
 
-    expect(findActionId(actionStartTime)).not.toBeUndefined()
+    expect(findActionId(clickActionStartTime)).not.toBeUndefined()
   })
 
-  it('counts errors occurring during the action', () => {
+  it('counts errors occurring during the click action', () => {
     const { lifeCycle, domMutationObservable, clock } = setupBuilder.build()
 
     emulateClickWithActivity(domMutationObservable, clock)
@@ -126,8 +126,8 @@ describe('trackActions', () => {
     lifeCycle.notify(LifeCycleEventType.RUM_EVENT_COLLECTED, RAW_ERROR_EVENT)
 
     expect(events.length).toBe(1)
-    const action = events[0]
-    expect(action.counts).toEqual({
+    const clickAction = events[0]
+    expect(clickAction.counts).toEqual({
       errorCount: 2,
       longTaskCount: 0,
       resourceCount: 0,
@@ -148,7 +148,7 @@ describe('trackActions', () => {
   })
 
   describe('without frustration-signals flag', () => {
-    it('discards pending action on view created', () => {
+    it('discards pending click action on view created', () => {
       const { lifeCycle, domMutationObservable, clock } = setupBuilder.build()
       emulateClickWithActivity(domMutationObservable, clock)
       expect(findActionId()).not.toBeUndefined()
@@ -163,7 +163,7 @@ describe('trackActions', () => {
       expect(findActionId()).toBeUndefined()
     })
 
-    it('ignores any starting action while another one is ongoing', () => {
+    it('ignores any starting click action while another one is ongoing', () => {
       const { domMutationObservable, clock } = setupBuilder.build()
 
       const firstClickTimeStamp = timeStampNow()
@@ -175,7 +175,7 @@ describe('trackActions', () => {
       expect(events[0].startClocks.timeStamp).toBe(firstClickTimeStamp)
     })
 
-    it('discards an action when nothing happens after a click', () => {
+    it('discards an click action when nothing happens after a click', () => {
       const { clock } = setupBuilder.build()
       emulateClickWithoutActivity()
 
@@ -184,7 +184,7 @@ describe('trackActions', () => {
       expect(findActionId()).toBeUndefined()
     })
 
-    it('ignores an action if it fails to find a name', () => {
+    it('ignores an click action if it fails to find a name', () => {
       const { domMutationObservable, clock } = setupBuilder.build()
       emulateClickWithActivity(domMutationObservable, clock, emptyElement)
       expect(findActionId()).toBeUndefined()
@@ -213,7 +213,7 @@ describe('trackActions', () => {
       resetExperimentalFeatures()
     })
 
-    it("doesn't discard pending action on view created", () => {
+    it("doesn't discard pending click action on view created", () => {
       const { lifeCycle, domMutationObservable, clock } = setupBuilder.build()
       emulateClickWithActivity(domMutationObservable, clock)
       expect(findActionId()).not.toBeUndefined()
@@ -227,7 +227,7 @@ describe('trackActions', () => {
       expect(events.length).toBe(1)
     })
 
-    it('collect actions even if another one is ongoing', () => {
+    it('collect click actions even if another one is ongoing', () => {
       const { domMutationObservable, clock } = setupBuilder.build()
 
       const firstClickTimeStamp = timeStampNow()
@@ -241,7 +241,7 @@ describe('trackActions', () => {
       expect(events[1].startClocks.timeStamp).toBe(secondClickTimeStamp)
     })
 
-    it('collect actions even if nothing happens after a click (dead click)', () => {
+    it('collect click actions even if nothing happens after a click (dead click)', () => {
       const { clock } = setupBuilder.build()
       emulateClickWithoutActivity()
 
@@ -260,7 +260,7 @@ describe('trackActions', () => {
       expect(events[0].duration).toBeUndefined()
     })
 
-    it('collect actions even if it fails to find a name', () => {
+    it('collect click actions even if it fails to find a name', () => {
       const { domMutationObservable, clock } = setupBuilder.build()
       emulateClickWithActivity(domMutationObservable, clock, emptyElement)
       expect(findActionId()!.length).toBeGreaterThan(0)
@@ -270,7 +270,8 @@ describe('trackActions', () => {
     })
 
     describe('error clicks', () => {
-      it('considers a "click with activity" followed by an error as an action with "error" frustration type', () => {
+      // eslint-disable-next-line max-len
+      it('considers a "click with activity" followed by an error as an click action with "error" frustration type', () => {
         const { lifeCycle, domMutationObservable, clock } = setupBuilder.build()
 
         emulateClickWithActivity(domMutationObservable, clock)
@@ -282,7 +283,7 @@ describe('trackActions', () => {
       })
 
       // eslint-disable-next-line max-len
-      it('considers a "click without activity" followed by an error as an action with "error" (and "dead") frustration type', () => {
+      it('considers a "click without activity" followed by an error as an click action with "error" (and "dead") frustration type', () => {
         const { lifeCycle, clock } = setupBuilder.build()
 
         emulateClickWithoutActivity()
@@ -313,10 +314,10 @@ describe('trackActions', () => {
     domMutationObservable: Observable<void>,
     clock: Clock,
     target: HTMLElement = button,
-    actionDuration: number = BEFORE_PAGE_ACTIVITY_VALIDATION_DELAY
+    clickActionDuration: number = BEFORE_PAGE_ACTIVITY_VALIDATION_DELAY
   ) {
     emulateClickWithoutActivity(target)
-    clock.tick(actionDuration)
+    clock.tick(clickActionDuration)
     // Since we don't collect dom mutations for this test, manually dispatch one
     domMutationObservable.notify()
   }

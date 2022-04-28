@@ -1,5 +1,6 @@
-import type { Context, Duration, ClocksState, RelativeTime, TimeStamp, Subscription } from '@datadog/browser-core'
+import type { Duration, ClocksState, RelativeTime, TimeStamp, Subscription } from '@datadog/browser-core'
 import {
+  setToArray,
   Observable,
   assign,
   isExperimentalFeatureEnabled,
@@ -21,23 +22,14 @@ import { trackEventCounts } from '../../trackEventCounts'
 import { waitIdlePage } from '../../waitIdlePage'
 import { getActionNameFromElement } from './getActionNameFromElement'
 
-type AutoActionType = ActionType.CLICK
-
 interface ActionCounts {
   errorCount: number
   longTaskCount: number
   resourceCount: number
 }
 
-export interface CustomAction {
-  type: ActionType.CUSTOM
-  name: string
-  startClocks: ClocksState
-  context?: Context
-}
-
-export interface AutoAction {
-  type: AutoActionType
+export interface ClickAction {
+  type: ActionType.CLICK
   id: string
   name: string
   startClocks: ClocksState
@@ -51,18 +43,20 @@ export interface ActionContexts {
   findActionId: (startTime?: RelativeTime) => string | string[] | undefined
 }
 
-// Maximum duration for automatic actions
-export const AUTO_ACTION_MAX_DURATION = 10 * ONE_SECOND
+type ClickActionIdHistory = ContextHistory<ClickAction['id']>
+
+// Maximum duration for click actions
+export const CLICK_ACTION_MAX_DURATION = 10 * ONE_SECOND
 export const ACTION_CONTEXT_TIME_OUT_DELAY = 5 * ONE_MINUTE // arbitrary
 
-export function trackActions(
+export function trackClickActions(
   lifeCycle: LifeCycle,
   domMutationObservable: Observable<void>,
   { actionNameAttribute }: RumConfiguration
 ) {
   // TODO: this will be changed when we introduce a proper initialization parameter for it
   const collectFrustrations = isExperimentalFeatureEnabled('frustration-signals')
-  const history = new ContextHistory<string>(ACTION_CONTEXT_TIME_OUT_DELAY)
+  const history: ClickActionIdHistory = new ContextHistory(ACTION_CONTEXT_TIME_OUT_DELAY)
   const stopObservable = new Observable<void>()
 
   lifeCycle.subscribe(LifeCycleEventType.SESSION_RENEWED, () => {
@@ -73,7 +67,7 @@ export function trackActions(
 
   const actionContexts: ActionContexts = {
     findActionId: (startTime?: RelativeTime) =>
-      isExperimentalFeatureEnabled('frustration-signals') ? history.findAll(startTime) : history.find(startTime),
+      collectFrustrations ? history.findAll(startTime) : history.find(startTime),
   }
 
   return {
@@ -100,10 +94,9 @@ export function trackActions(
 
     const startClocks = clocksNow()
 
-    const singleClickPotentialAction = newPotentialAction(lifeCycle, history, collectFrustrations, {
+    const potentialClickAction = newPotentialClickAction(lifeCycle, history, collectFrustrations, {
       name,
       event,
-      type: ActionType.CLICK as const,
       startClocks,
     })
 
@@ -115,27 +108,27 @@ export function trackActions(
           // If it has no activity, consider it as a dead click.
           // TODO: this will yield a lot of false positive. We'll need to refine it in the future.
           if (collectFrustrations) {
-            singleClickPotentialAction.addFrustration(FrustrationType.DEAD)
-            singleClickPotentialAction.validate()
+            potentialClickAction.addFrustration(FrustrationType.DEAD)
+            potentialClickAction.validate()
           } else {
-            singleClickPotentialAction.discard()
+            potentialClickAction.discard()
           }
         } else if (idleEvent.end < startClocks.timeStamp) {
           // If the clock is looking weird, just discard the action
-          singleClickPotentialAction.discard()
+          potentialClickAction.discard()
         } else {
-          // Else validate the action at the end of the page activity
-          singleClickPotentialAction.validate(idleEvent.end)
+          // Else validate the potential click action at the end of the page activity
+          potentialClickAction.validate(idleEvent.end)
         }
         stopClickProcessing()
       },
-      AUTO_ACTION_MAX_DURATION
+      CLICK_ACTION_MAX_DURATION
     )
 
     let viewCreatedSubscription: Subscription | undefined
     if (!collectFrustrations) {
-      // TODO: remove this in a future major version. To keep retrocompatibility, end the action on a
-      // new view is created.
+      // TODO: remove this in a future major version. To keep retrocompatibility, end the potential
+      // click action on a new view is created.
       viewCreatedSubscription = lifeCycle.subscribe(LifeCycleEventType.VIEW_CREATED, stopClickProcessing)
     }
 
@@ -143,7 +136,7 @@ export function trackActions(
 
     function stopClickProcessing() {
       // Cleanup any ongoing process
-      singleClickPotentialAction.discard()
+      potentialClickAction.discard()
       if (viewCreatedSubscription) {
         viewCreatedSubscription.unsubscribe()
       }
@@ -166,11 +159,11 @@ function listenClickEvents(callback: (clickEvent: MouseEvent & { target: Element
   )
 }
 
-function newPotentialAction(
+function newPotentialClickAction(
   lifeCycle: LifeCycle,
-  history: ContextHistory<string>,
+  history: ClickActionIdHistory,
   collectFrustrations: boolean,
-  base: Pick<AutoAction, 'startClocks' | 'event' | 'name' | 'type'>
+  base: Pick<ClickAction, 'startClocks' | 'event' | 'name'>
 ) {
   const id = generateUUID()
   const historyEntry = history.add(id, base.startClocks.relative)
@@ -207,16 +200,13 @@ function newPotentialAction(
         addFrustration(FrustrationType.ERROR)
       }
 
-      const frustrationTypes: FrustrationType[] = []
-      frustrations.forEach((frustration) => {
-        frustrationTypes.push(frustration)
-      })
       const { resourceCount, errorCount, longTaskCount } = eventCountsSubscription.eventCounts
-      const action: AutoAction = assign(
+      const clickAction: ClickAction = assign(
         {
+          type: ActionType.CLICK as const,
           duration: endTime && elapsed(base.startClocks.timeStamp, endTime),
           id,
-          frustrationTypes,
+          frustrationTypes: setToArray(frustrations),
           counts: {
             resourceCount,
             errorCount,
@@ -225,7 +215,7 @@ function newPotentialAction(
         },
         base
       )
-      lifeCycle.notify(LifeCycleEventType.AUTO_ACTION_COMPLETED, action)
+      lifeCycle.notify(LifeCycleEventType.AUTO_ACTION_COMPLETED, clickAction)
     },
 
     discard: () => {
