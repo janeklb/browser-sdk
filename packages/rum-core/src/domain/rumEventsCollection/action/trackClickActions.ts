@@ -1,6 +1,7 @@
 import type { Duration, ClocksState, RelativeTime, TimeStamp, Subscription } from '@datadog/browser-core'
 import {
   setToArray,
+  noop,
   Observable,
   assign,
   isExperimentalFeatureEnabled,
@@ -20,6 +21,8 @@ import type { LifeCycle } from '../../lifeCycle'
 import { LifeCycleEventType } from '../../lifeCycle'
 import { trackEventCounts } from '../../trackEventCounts'
 import { waitIdlePage } from '../../waitIdlePage'
+import type { RageClickChain } from './rageClickChain'
+import { createRageClickChain } from './rageClickChain'
 import { getActionNameFromElement } from './getActionNameFromElement'
 
 interface ActionCounts {
@@ -35,7 +38,7 @@ export interface ClickAction {
   startClocks: ClocksState
   duration?: Duration
   counts: ActionCounts
-  event: Event
+  event: MouseEvent
   frustrationTypes: FrustrationType[]
 }
 
@@ -58,9 +61,16 @@ export function trackClickActions(
   const collectFrustrations = isExperimentalFeatureEnabled('frustration-signals')
   const history: ClickActionIdHistory = new ContextHistory(ACTION_CONTEXT_TIME_OUT_DELAY)
   const stopObservable = new Observable<void>()
+  let currentRageClickChain: RageClickChain | undefined
 
   lifeCycle.subscribe(LifeCycleEventType.SESSION_RENEWED, () => {
     history.reset()
+  })
+
+  lifeCycle.subscribe(LifeCycleEventType.BEFORE_UNLOAD, () => {
+    if (currentRageClickChain) {
+      currentRageClickChain.stop()
+    }
   })
 
   const { stop: stopListener } = listenClickEvents(onClick)
@@ -72,6 +82,9 @@ export function trackClickActions(
 
   return {
     stop: () => {
+      if (currentRageClickChain) {
+        currentRageClickChain.stop()
+      }
       stopObservable.notify()
       stopListener()
     },
@@ -100,6 +113,13 @@ export function trackClickActions(
       startClocks,
     })
 
+    // If we collect frustration, we have to add the potential click action to a "click chain" which
+    // will validate it only if it's not part of a rage click.
+    if (collectFrustrations && (!currentRageClickChain || !currentRageClickChain.tryAppend(potentialClickAction))) {
+      // If we failed to add the click to the current click chain, create a new click chain
+      currentRageClickChain = createRageClickChain(potentialClickAction)
+    }
+
     const { stop: stopWaitingIdlePage } = waitIdlePage(
       lifeCycle,
       domMutationObservable,
@@ -109,15 +129,18 @@ export function trackClickActions(
           // TODO: this will yield a lot of false positive. We'll need to refine it in the future.
           if (collectFrustrations) {
             potentialClickAction.addFrustration(FrustrationType.DEAD)
-            potentialClickAction.validate()
+            potentialClickAction.stop()
           } else {
             potentialClickAction.discard()
           }
         } else if (idleEvent.end < startClocks.timeStamp) {
-          // If the clock is looking weird, just discard the action
+          // If the clock is looking weird, just discard the potential click action
           potentialClickAction.discard()
+        } else if (collectFrustrations) {
+          // If we collect frustrations, let's stop the potential click action, but validate it later
+          potentialClickAction.stop(idleEvent.end)
         } else {
-          // Else validate the potential click action at the end of the page activity
+          // Else just validate it now
           potentialClickAction.validate(idleEvent.end)
         }
         stopClickProcessing()
@@ -136,7 +159,7 @@ export function trackClickActions(
 
     function stopClickProcessing() {
       // Cleanup any ongoing process
-      potentialClickAction.discard()
+      potentialClickAction.stop()
       if (viewCreatedSubscription) {
         viewCreatedSubscription.unsubscribe()
       }
@@ -159,6 +182,22 @@ function listenClickEvents(callback: (clickEvent: MouseEvent & { target: Element
   )
 }
 
+const enum PotentialClickActionStatus {
+  // Initial state, the potential click action is still ongoing.
+  PENDING,
+  // The potential click action is no more ongoing but still needs to be validated or discarded.
+  STOPPED,
+  // Final state, the potential click action has been stopped and validated or discarded.
+  FINALIZED,
+}
+
+type PotentialClickActionState =
+  | { status: PotentialClickActionStatus.PENDING }
+  | { status: PotentialClickActionStatus.STOPPED; endTime?: TimeStamp }
+  | { status: PotentialClickActionStatus.FINALIZED }
+
+export type PotentialClickAction = ReturnType<typeof newPotentialClickAction>
+
 function newPotentialClickAction(
   lifeCycle: LifeCycle,
   history: ClickActionIdHistory,
@@ -168,18 +207,22 @@ function newPotentialClickAction(
   const id = generateUUID()
   const historyEntry = history.add(id, base.startClocks.relative)
   const eventCountsSubscription = trackEventCounts(lifeCycle)
-  let isStopped = false
-
+  let state: PotentialClickActionState = { status: PotentialClickActionStatus.PENDING }
   const frustrations = new Set<FrustrationType>()
+  let onStopCallback = noop
 
   function stop(endTime?: TimeStamp) {
-    isStopped = true
+    if (state.status !== PotentialClickActionStatus.PENDING) {
+      return
+    }
+    state = { status: PotentialClickActionStatus.STOPPED, endTime }
     if (endTime) {
       historyEntry.close(getRelativeTime(endTime))
     } else {
       historyEntry.remove()
     }
     eventCountsSubscription.stop()
+    onStopCallback()
   }
 
   function addFrustration(frustration: FrustrationType) {
@@ -189,13 +232,24 @@ function newPotentialClickAction(
   }
 
   return {
+    base,
     addFrustration,
+    stop,
+
+    getFrustrations: () => frustrations,
+
+    onStop: (newOnStopCallback: () => void) => {
+      onStopCallback = newOnStopCallback
+    },
+
+    clone: () => newPotentialClickAction(lifeCycle, history, collectFrustrations, base),
 
     validate: (endTime?: TimeStamp) => {
-      if (isStopped) {
+      stop(endTime)
+      if (state.status !== PotentialClickActionStatus.STOPPED) {
         return
       }
-      stop(endTime)
+
       if (eventCountsSubscription.eventCounts.errorCount > 0) {
         addFrustration(FrustrationType.ERROR)
       }
@@ -204,7 +258,7 @@ function newPotentialClickAction(
       const clickAction: ClickAction = assign(
         {
           type: ActionType.CLICK as const,
-          duration: endTime && elapsed(base.startClocks.timeStamp, endTime),
+          duration: state.endTime && elapsed(base.startClocks.timeStamp, state.endTime),
           id,
           frustrationTypes: setToArray(frustrations),
           counts: {
@@ -216,13 +270,12 @@ function newPotentialClickAction(
         base
       )
       lifeCycle.notify(LifeCycleEventType.AUTO_ACTION_COMPLETED, clickAction)
+      state = { status: PotentialClickActionStatus.FINALIZED }
     },
 
     discard: () => {
-      if (isStopped) {
-        return
-      }
       stop()
+      state = { status: PotentialClickActionStatus.FINALIZED }
     },
   }
 }
