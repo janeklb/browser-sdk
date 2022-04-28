@@ -1,5 +1,6 @@
 import type { Duration, ClocksState, RelativeTime, TimeStamp, Subscription } from '@datadog/browser-core'
 import {
+  setToArray,
   noop,
   Observable,
   assign,
@@ -45,6 +46,8 @@ export interface ActionContexts {
   findActionId: (startTime?: RelativeTime) => string | string[] | undefined
 }
 
+type ClickActionIdHistory = ContextHistory<ClickAction['id']>
+
 // Maximum duration for click actions
 export const CLICK_ACTION_MAX_DURATION = 10 * ONE_SECOND
 export const ACTION_CONTEXT_TIME_OUT_DELAY = 5 * ONE_MINUTE // arbitrary
@@ -56,7 +59,7 @@ export function trackClickActions(
 ) {
   // TODO: this will be changed when we introduce a proper initialization parameter for it
   const collectFrustrations = isExperimentalFeatureEnabled('frustration-signals')
-  const history = new ContextHistory<string>(ACTION_CONTEXT_TIME_OUT_DELAY)
+  const history: ClickActionIdHistory = new ContextHistory(ACTION_CONTEXT_TIME_OUT_DELAY)
   const stopObservable = new Observable<void>()
   let currentRageClickChain: RageClickChain | undefined
 
@@ -74,7 +77,7 @@ export function trackClickActions(
 
   const actionContexts: ActionContexts = {
     findActionId: (startTime?: RelativeTime) =>
-      isExperimentalFeatureEnabled('frustration-signals') ? history.findAll(startTime) : history.find(startTime),
+      collectFrustrations ? history.findAll(startTime) : history.find(startTime),
   }
 
   return {
@@ -197,7 +200,7 @@ export type PotentialClickAction = ReturnType<typeof newPotentialClickAction>
 
 function newPotentialClickAction(
   lifeCycle: LifeCycle,
-  history: ContextHistory<string>,
+  history: ClickActionIdHistory,
   collectFrustrations: boolean,
   base: Pick<ClickAction, 'startClocks' | 'event' | 'name'>
 ) {
@@ -251,17 +254,13 @@ function newPotentialClickAction(
         addFrustration(FrustrationType.ERROR)
       }
 
-      const frustrationTypes: FrustrationType[] = []
-      frustrations.forEach((frustration) => {
-        frustrationTypes.push(frustration)
-      })
       const { resourceCount, errorCount, longTaskCount } = eventCountsSubscription.eventCounts
       const clickAction: ClickAction = assign(
         {
           type: ActionType.CLICK as const,
           duration: state.endTime && elapsed(base.startClocks.timeStamp, state.endTime),
           id,
-          frustrationTypes,
+          frustrationTypes: setToArray(frustrations),
           counts: {
             resourceCount,
             errorCount,
