@@ -94,16 +94,6 @@ describe('trackClickActions', () => {
     ])
   })
 
-  it('discards any pending click action with a negative duration', () => {
-    const { domMutationObservable, clock } = setupBuilder.build()
-    emulateClickWithActivity(domMutationObservable, clock, button, -1)
-    expect(findActionId()).not.toBeUndefined()
-    clock.tick(EXPIRE_DELAY)
-
-    expect(events).toEqual([])
-    expect(findActionId()).toBeUndefined()
-  })
-
   it('should keep track of previously validated click actions', () => {
     const { domMutationObservable, clock } = setupBuilder.build()
     const clickActionStartTime = relativeNow()
@@ -149,7 +139,17 @@ describe('trackClickActions', () => {
   })
 
   describe('without frustration-signals flag', () => {
-    it('discards pending click action on view created', () => {
+    it('discards any click action with a negative duration', () => {
+      const { domMutationObservable, clock } = setupBuilder.build()
+      emulateClickWithActivity(domMutationObservable, clock, button, -1)
+      expect(findActionId()).not.toBeUndefined()
+      clock.tick(EXPIRE_DELAY)
+
+      expect(events).toEqual([])
+      expect(findActionId()).toBeUndefined()
+    })
+
+    it('discards ongoing click action on view created', () => {
       const { lifeCycle, domMutationObservable, clock } = setupBuilder.build()
       emulateClickWithActivity(domMutationObservable, clock)
       expect(findActionId()).not.toBeUndefined()
@@ -176,7 +176,7 @@ describe('trackClickActions', () => {
       expect(events[0].startClocks.timeStamp).toBe(firstClickTimeStamp)
     })
 
-    it('discards an click action when nothing happens after a click', () => {
+    it('discards a click action when nothing happens after a click', () => {
       const { clock } = setupBuilder.build()
       emulateClickWithoutActivity()
 
@@ -185,7 +185,7 @@ describe('trackClickActions', () => {
       expect(findActionId()).toBeUndefined()
     })
 
-    it('ignores an click action if it fails to find a name', () => {
+    it('ignores a click action if it fails to find a name', () => {
       const { domMutationObservable, clock } = setupBuilder.build()
       emulateClickWithActivity(domMutationObservable, clock, emptyElement)
       expect(findActionId()).toBeUndefined()
@@ -214,7 +214,17 @@ describe('trackClickActions', () => {
       resetExperimentalFeatures()
     })
 
-    it("doesn't discard pending click action on view created", () => {
+    it('discards any click action with a negative duration', () => {
+      const { domMutationObservable, clock } = setupBuilder.build()
+      emulateClickWithActivity(domMutationObservable, clock, button, -1)
+      expect(findActionId()).not.toBeUndefined()
+      clock.tick(EXPIRE_DELAY)
+
+      expect(events).toEqual([])
+      expect(findActionId()).toEqual([])
+    })
+
+    it("doesn't discard ongoing click action on view created", () => {
       const { lifeCycle, domMutationObservable, clock } = setupBuilder.build()
       emulateClickWithActivity(domMutationObservable, clock)
       expect(findActionId()).not.toBeUndefined()
@@ -311,7 +321,7 @@ describe('trackClickActions', () => {
 
     describe('error clicks', () => {
       // eslint-disable-next-line max-len
-      it('considers a "click with activity" followed by an error as an click action with "error" frustration type', () => {
+      it('considers a "click with activity" followed by an error as a click action with "error" frustration type', () => {
         const { lifeCycle, domMutationObservable, clock } = setupBuilder.build()
 
         emulateClickWithActivity(domMutationObservable, clock)
@@ -323,7 +333,7 @@ describe('trackClickActions', () => {
       })
 
       // eslint-disable-next-line max-len
-      it('considers a "click without activity" followed by an error as an click action with "error" (and "dead") frustration type', () => {
+      it('considers a "click without activity" followed by an error as a click action with "error" (and "dead") frustration type', () => {
         const { lifeCycle, clock } = setupBuilder.build()
 
         emulateClickWithoutActivity()
