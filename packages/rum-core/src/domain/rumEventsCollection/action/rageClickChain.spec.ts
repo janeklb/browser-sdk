@@ -1,4 +1,4 @@
-import { noop, Observable, ONE_SECOND, timeStampNow } from '@datadog/browser-core'
+import { Observable, ONE_SECOND, timeStampNow } from '@datadog/browser-core'
 import type { Clock } from '@datadog/browser-core/test/specHelper'
 import { mockClock, createNewEvent } from '@datadog/browser-core/test/specHelper'
 import { FrustrationType } from '../../../rawRumEvent.types'
