@@ -1,4 +1,4 @@
-import { getOrigin, objectEntries, shallowClone } from '@datadog/browser-core'
+import { getOrigin, matchList, objectEntries, shallowClone } from '@datadog/browser-core'
 import type { RumConfiguration } from '../configuration'
 import type {
   RumFetchCompleteContext,
@@ -96,13 +96,7 @@ function injectHeadersIfTracingAllowed(
 }
 
 function isAllowedUrl(configuration: RumConfiguration, requestUrl: string) {
-  const requestOrigin = getOrigin(requestUrl)
-  for (const allowedOrigin of configuration.allowedTracingOrigins) {
-    if (requestOrigin === allowedOrigin || (allowedOrigin instanceof RegExp && allowedOrigin.test(requestOrigin))) {
-      return true
-    }
-  }
-  return false
+  return matchList(configuration.allowedTracingOrigins, getOrigin(requestUrl))
 }
 
 export function isTracingSupported() {
