@@ -15,6 +15,7 @@ export interface RumInitConfiguration extends InitConfiguration {
   // global options
   applicationId: string
   beforeSend?: ((event: RumEvent, context: RumEventDomainContext) => void | boolean) | undefined
+  excludedActivityUrls?: ReadonlyArray<string | RegExp> | undefined
 
   // tracing options
   allowedTracingOrigins?: ReadonlyArray<string | RegExp> | undefined
@@ -38,6 +39,7 @@ export interface RumConfiguration extends Configuration {
   // Built from init configuration
   actionNameAttribute: string | undefined
   allowedTracingOrigins: Array<string | RegExp>
+  excludedActivityUrls: Array<string | RegExp>
   applicationId: string
   defaultPrivacyLevel: DefaultPrivacyLevel
   replaySampleRate: number
@@ -71,6 +73,13 @@ export function validateAndBuildRumConfiguration(
     }
   }
 
+  if (initConfiguration.excludedActivityUrls !== undefined) {
+    if (!Array.isArray(initConfiguration.excludedActivityUrls)) {
+      display.error('Excluded Activity Urls should be an array')
+      return
+    }
+  }
+
   const baseConfiguration = validateAndBuildConfiguration(initConfiguration)
   if (!baseConfiguration) {
     return
@@ -85,6 +94,7 @@ export function validateAndBuildRumConfiguration(
       actionNameAttribute: initConfiguration.actionNameAttribute,
       replaySampleRate: initConfiguration.replaySampleRate ?? 100,
       allowedTracingOrigins: initConfiguration.allowedTracingOrigins ?? [],
+      excludedActivityUrls: initConfiguration.excludedActivityUrls ?? [],
       trackInteractions: !!initConfiguration.trackInteractions || trackFrustrations,
       trackFrustrations,
       trackViewsManually: !!initConfiguration.trackViewsManually,
