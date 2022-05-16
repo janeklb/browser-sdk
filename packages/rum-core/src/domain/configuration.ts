@@ -69,6 +69,11 @@ export function validateAndBuildRumConfiguration(
     return
   }
 
+  if (initConfiguration.tracingSampleRate !== undefined && !isPercentage(initConfiguration.tracingSampleRate)) {
+    display.error('Tracing Sample Rate should be a number between 0 and 100')
+    return
+  }
+
   if (initConfiguration.allowedTracingOrigins !== undefined) {
     if (!Array.isArray(initConfiguration.allowedTracingOrigins)) {
       display.error('Allowed Tracing Origins should be an array')
@@ -101,8 +106,8 @@ export function validateAndBuildRumConfiguration(
       actionNameAttribute: initConfiguration.actionNameAttribute,
       replaySampleRate: initConfiguration.replaySampleRate ?? 100,
       allowedTracingOrigins: initConfiguration.allowedTracingOrigins ?? [],
-      excludedActivityUrls: initConfiguration.excludedActivityUrls ?? [],
       tracingSampleRate: initConfiguration.tracingSampleRate ?? 100,
+      excludedActivityUrls: initConfiguration.excludedActivityUrls ?? [],
       trackInteractions: !!initConfiguration.trackInteractions || trackFrustrations,
       trackFrustrations,
       trackViewsManually: !!initConfiguration.trackViewsManually,
