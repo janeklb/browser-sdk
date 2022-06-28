@@ -31,6 +31,7 @@ async function uploadSourceMaps(apiKey, packageName) {
       --release-version ${SDK_VERSION} \
       --minified-path-prefix / \
       --project-path @datadog/browser-${packageName}/ \
+      --repository-url https://www.github.com/datadog/browser-sdk / \
   `,
     {
       DATADOG_API_KEY: apiKey,
