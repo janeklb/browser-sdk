@@ -6,13 +6,13 @@ const { SDK_VERSION } = require('./build-env')
 /**
  * Upload source maps to datadog
  * Usage:
- * BUILD_MODE=canary|release node upload-source-maps.js datadoghq.com staging|canary|vXXX
+ * BUILD_MODE=canary|release node upload-source-maps.js site1,site2,... staging|canary|vXXX
  */
 
-const site = process.argv[2]
+const sites = process.argv[2].split(',')
 const suffix = process.argv[3]
 
-async function uploadSourceMaps(apiKey, packageName) {
+async function uploadSourceMaps(site, apiKey, packageName) {
   const bundleFolder = `packages/${packageName}/bundle`
 
   // The datadog-ci CLI is taking a directory as an argument. It will scan every source map files in
@@ -42,14 +42,15 @@ async function uploadSourceMaps(apiKey, packageName) {
 }
 
 async function main() {
-  const normalizedSite = site.replaceAll('.', '-')
-  const apiKey = await getSecretKey(`ci.browser-sdk.source-maps.${normalizedSite}.ci_api_key`)
+  for (const site of sites) {
+    const normalizedSite = site.replaceAll('.', '-')
+    const apiKey = await getSecretKey(`ci.browser-sdk.source-maps.${normalizedSite}.ci_api_key`)
 
-  for (const packageName of ['logs', 'rum', 'rum-slim']) {
-    await uploadSourceMaps(apiKey, packageName)
+    for (const packageName of ['logs', 'rum', 'rum-slim']) {
+      await uploadSourceMaps(apiKey, packageName)
+    }
+    printLog(`Source maps uploaded for ${site}.`)
   }
-
-  printLog('Source map upload done.')
 }
 
 main().catch(logAndExit)
