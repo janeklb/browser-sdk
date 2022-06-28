@@ -41,7 +41,8 @@ async function uploadSourceMaps(apiKey, packageName) {
 }
 
 async function main() {
-  const apiKey = await getSecretKey('ci.browser-sdk.datadog_ci_api_key')
+  const normalizedSite = site.replaceAll('.', '-')
+  const apiKey = await getSecretKey(`ci.browser-sdk.source-maps.${normalizedSite}.ci_api_key`)
 
   for (const packageName of ['logs', 'rum', 'rum-slim']) {
     await uploadSourceMaps(apiKey, packageName)
