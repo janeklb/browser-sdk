@@ -24,6 +24,7 @@ async function renameFiles(bundleFolder, packageName) {
 }
 
 async function uploadSourceMaps(site, apiKey, packageName, bundleFolder) {
+  printLog(`Uploading ${packageName} source maps for ${site}...`)
   const output = await executeCommand(
     `
     datadog-ci sourcemaps upload ${bundleFolder} \
