@@ -47,7 +47,7 @@ async function main() {
     const apiKey = await getSecretKey(`ci.browser-sdk.source-maps.${normalizedSite}.ci_api_key`)
 
     for (const packageName of ['logs', 'rum', 'rum-slim']) {
-      await uploadSourceMaps(apiKey, packageName)
+      await uploadSourceMaps(site, apiKey, packageName)
     }
     printLog(`Source maps uploaded for ${site}.`)
   }
