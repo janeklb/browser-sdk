@@ -1,5 +1,6 @@
 import type { Context, TelemetryEvent } from '@datadog/browser-core'
 import {
+  willSyntheticsInjectRum,
   areCookiesAuthorized,
   canUseEventBridge,
   getEventBridge,
@@ -47,7 +48,7 @@ export function startLogs(configuration: LogsConfiguration, getCommonContext: ()
   const { handleLog } = startLoggerCollection(lifeCycle)
 
   const session =
-    areCookiesAuthorized(configuration.cookieOptions) && !canUseEventBridge()
+    areCookiesAuthorized(configuration.cookieOptions) && !canUseEventBridge() && !willSyntheticsInjectRum()
       ? startLogsSessionManager(configuration)
       : startLogsSessionManagerStub(configuration)
 
