@@ -227,6 +227,29 @@ describe('action collection', () => {
       expect(actionEvents[0].action.frustration!.type).toEqual([])
     })
 
+  createTest('do not consider a click that open a new window as "dead_click"')
+    .withRum({ trackFrustrations: true })
+    .withBody(
+      html`
+        <button>click me</button>
+        <script>
+          const button = document.querySelector('button')
+          button.addEventListener('click', () => {
+            window.open('/')
+          })
+        </script>
+      `
+    )
+    .run(async ({ serverEvents }) => {
+      const button = await $('button')
+      await button.click()
+      await flushEvents()
+      const actionEvents = serverEvents.rumActions
+
+      expect(actionEvents.length).toBe(1)
+      expect(actionEvents[0].action.frustration!.type).toEqual([])
+    })
+
   createTest('collect a "rage click"')
     .withRum({ trackFrustrations: true })
     .withBody(
