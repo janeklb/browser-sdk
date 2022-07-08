@@ -235,14 +235,20 @@ describe('action collection', () => {
         <script>
           const button = document.querySelector('button')
           button.addEventListener('click', () => {
-            window.open('/')
+            window.open('https://example.com')
           })
         </script>
       `
     )
     .run(async ({ serverEvents }) => {
+      const windowHandle = await browser.getWindowHandle()
       const button = await $('button')
       await button.click()
+      // Ideally, we would close the newly created window. But on Safari desktop (at least), it is
+      // not possible to do so: calling `browser.closeWindow()` is failing with "no such window:
+      // unknown error". Instead, just switch back to the original window.
+      await browser.switchToWindow(windowHandle)
+
       await flushEvents()
       const actionEvents = serverEvents.rumActions
 
