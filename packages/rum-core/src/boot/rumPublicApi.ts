@@ -209,6 +209,8 @@ export function makeRumPublicApi(
       }
     }),
 
+    getUser: monitor(() => deepClone(user)),
+
     removeUser: monitor(() => {
       user = {}
     }),

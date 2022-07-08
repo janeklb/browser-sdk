@@ -455,6 +455,44 @@ describe('rum public api', () => {
     })
   })
 
+  describe('getUser', () => {
+    let addActionSpy: jasmine.Spy<ReturnType<StartRum>['addAction']>
+    let rumPublicApi: RumPublicApi
+    let setupBuilder: TestSetupBuilder
+
+    beforeEach(() => {
+      addActionSpy = jasmine.createSpy()
+      rumPublicApi = makeRumPublicApi(
+        () => ({
+          ...noopStartRum(),
+          addAction: addActionSpy,
+        }),
+        noopRecorderApi
+      )
+      setupBuilder = setup()
+    })
+
+    afterEach(() => {
+      setupBuilder.cleanup()
+    })
+
+    it('should return empty object if no user has been set', () => {
+      const userClone = rumPublicApi.getUser()
+      expect(userClone).toEqual({})
+    })
+
+    it('should return a clone of the original object if set', () => {
+      const user = { id: 'foo', name: 'bar', email: 'qux', foo: { bar: 'qux' } }
+      rumPublicApi.setUser(user)
+      const userClone = rumPublicApi.getUser()
+      const userClone2 = rumPublicApi.getUser()
+
+      expect(userClone).not.toBe(user)
+      expect(userClone).not.toBe(userClone2)
+      expect(userClone).toEqual(user)
+    })
+  })
+
   describe('addTiming', () => {
     let addTimingSpy: jasmine.Spy<ReturnType<StartRum>['addTiming']>
     let displaySpy: jasmine.Spy<() => void>
