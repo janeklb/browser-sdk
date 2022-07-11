@@ -10,7 +10,14 @@ import {
   addEventListener,
   noop,
 } from '@datadog/browser-core'
-import { initViewportObservable } from '@datadog/browser-rum-core'
+import type { LifeCycle } from '@datadog/browser-rum-core'
+import {
+  FrustrationType,
+  initViewportObservable,
+  ActionType,
+  RumEventType,
+  LifeCycleEventType,
+} from '@datadog/browser-rum-core'
 import { NodePrivacyLevel } from '../../constants'
 import type {
   InputState,
@@ -23,11 +30,14 @@ import type {
   MediaInteraction,
   FocusRecord,
   VisualViewportRecord,
+  FrustrationRecord,
+  IncrementalSnapshotRecord,
+  MouseInteractionData,
 } from '../../types'
-import { IncrementalSource, MediaInteractionType, MouseInteractionType } from '../../types'
+import { RecordType, IncrementalSource, MediaInteractionType, MouseInteractionType } from '../../types'
 import { getNodePrivacyLevel, shouldMaskNode } from './privacy'
 import { getElementInputValue, getSerializedNodeId, hasSerializedNode } from './serializationUtils'
-import { forEach, isTouchEvent } from './utils'
+import { assembleIncrementalSnapshot, forEach, getFrustrationFromAction, isTouchEvent } from './utils'
 import type { MutationController } from './mutationObserver'
 import { startMutationObserver } from './mutationObserver'
 
@@ -36,6 +46,16 @@ import { getVisualViewport, getScrollX, getScrollY, convertMouseEventToLayoutCoo
 const MOUSE_MOVE_OBSERVER_THRESHOLD = 50
 const SCROLL_OBSERVER_THRESHOLD = 100
 const VISUAL_VIEWPORT_OBSERVER_THRESHOLD = 200
+
+const recordIds = new WeakMap<Event, number>()
+let nextId = 1
+
+function getRecordIdForEvent(event: Event): number {
+  if (!recordIds.has(event)) {
+    recordIds.set(event, nextId++)
+  }
+  return recordIds.get(event)!
+}
 
 type ListenerHandler = () => void
 
@@ -46,7 +66,7 @@ type MousemoveCallBack = (
 
 export type MutationCallBack = (m: MutationPayload) => void
 
-type MouseInteractionCallBack = (d: MouseInteraction) => void
+type MouseInteractionCallBack = (record: IncrementalSnapshotRecord) => void
 
 type ScrollCallback = (p: ScrollPosition) => void
 
@@ -62,7 +82,10 @@ type FocusCallback = (data: FocusRecord['data']) => void
 
 type VisualViewportResizeCallback = (data: VisualViewportRecord['data']) => void
 
+type FrustrationCallback = (record: FrustrationRecord) => void
+
 interface ObserverParam {
+  lifeCycle: LifeCycle
   defaultPrivacyLevel: DefaultPrivacyLevel
   mutationController: MutationController
   mutationCb: MutationCallBack
@@ -75,6 +98,7 @@ interface ObserverParam {
   mediaInteractionCb: MediaInteractionCallback
   styleSheetRuleCb: StyleSheetRuleCallback
   focusCb: FocusCallback
+  frustrationCb: FrustrationCallback
 }
 
 export function initObservers(o: ObserverParam): ListenerHandler {
@@ -88,6 +112,7 @@ export function initObservers(o: ObserverParam): ListenerHandler {
   const styleSheetObserver = initStyleSheetObserver(o.styleSheetRuleCb)
   const focusHandler = initFocusObserver(o.focusCb)
   const visualViewportResizeHandler = initVisualViewportResizeObserver(o.visualViewportResizeCb)
+  const frustartionHandler = initFrustrationObserver(o.lifeCycle, o.frustrationCb)
 
   return () => {
     mutationHandler()
@@ -100,6 +125,7 @@ export function initObservers(o: ObserverParam): ListenerHandler {
     styleSheetObserver()
     focusHandler()
     visualViewportResizeHandler()
+    frustartionHandler()
   }
 }
 
@@ -175,7 +201,12 @@ function initMouseInteractionObserver(
       position.x = visualViewportX
       position.y = visualViewportY
     }
-    cb(position)
+
+    const record = assign(
+      { id: getRecordIdForEvent(event) },
+      assembleIncrementalSnapshot<MouseInteractionData>(IncrementalSource.MouseInteraction, position)
+    )
+    cb(record)
   }
   return addEventListeners(document, Object.keys(eventTypeToMouseInteraction) as DOM_EVENT[], handler, {
     capture: true,
@@ -398,4 +429,29 @@ function initVisualViewportResizeObserver(cb: VisualViewportResizeCallback): Lis
     removeListener()
     cancelThrottle()
   }
+}
+
+function initFrustrationObserver(lifeCycle: LifeCycle, frustrationCb: FrustrationCallback): ListenerHandler {
+  return lifeCycle.subscribe(LifeCycleEventType.RAW_RUM_EVENT_COLLECTED, (data) => {
+    if (
+      data.rawRumEvent.type === RumEventType.ACTION &&
+      data.rawRumEvent.action.type === ActionType.CLICK &&
+      data.rawRumEvent.action.frustration?.type &&
+      'event' in data.domainContext &&
+      data.domainContext.event
+    ) {
+      const frustrationType = getFrustrationFromAction(data.rawRumEvent.action.frustration.type)
+      frustrationCb({
+        timestamp: data.rawRumEvent.date,
+        type: RecordType.FrustrationRecord,
+        data: {
+          frustrationType,
+          recordIds:
+            frustrationType === FrustrationType.RAGE_CLICK && data.domainContext.eventsSequence
+              ? data.domainContext.eventsSequence.map((e) => getRecordIdForEvent(e))
+              : [getRecordIdForEvent(data.domainContext.event)],
+        },
+      })
+    }
+  }).unsubscribe
 }
