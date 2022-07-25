@@ -263,7 +263,7 @@ describe('utils', () => {
     })
 
     it('should jsonStringify a value with toJSON defined on its prototype', () => {
-      const value = createDummyClassInstance()
+      const value = createSampleClassInstance()
       const expectedJson = JSON.stringify(value)
 
       expect(jsonStringify(value)).toEqual(expectedJson)
@@ -273,7 +273,7 @@ describe('utils', () => {
     })
 
     it('should jsonStringify a value when toJSON is defined on Object prototype', () => {
-      const value = createDummyClassInstance()
+      const value = createSampleClassInstance()
       const expectedJson = JSON.stringify(value)
 
       expect(jsonStringify(value)).toEqual(expectedJson)
@@ -283,7 +283,7 @@ describe('utils', () => {
     })
 
     it('should jsonStringify a value when toJSON is defined on Array prototype', () => {
-      const value = createDummyClassInstance([1])
+      const value = createSampleClassInstance([1])
       const expectedJson = JSON.stringify(value)
 
       expect(jsonStringify(value)).toEqual(expectedJson)
@@ -313,7 +313,7 @@ describe('utils', () => {
       expect(jsonStringify(circularReference)).toEqual('<error: unable to serialize object>')
     })
 
-    function createDummyClassInstance(value: any = 'value') {
+    function createSampleClassInstance(value: any = 'value') {
       class Foo {
         value = value
       }
