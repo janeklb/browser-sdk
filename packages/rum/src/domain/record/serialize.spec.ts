@@ -25,7 +25,7 @@ import {
   serializeDocumentNode,
   serializeChildNodes,
   serializeAttribute,
-  SerializationContext,
+  SerializationContextStatus,
 } from './serialize'
 import { MAX_ATTRIBUTE_VALUE_CHAR_LENGTH } from './privacy'
 import type { ElementsScrollPositions } from './elementsScrollPositions'
@@ -34,8 +34,10 @@ import { createElementsScrollPositions } from './elementsScrollPositions'
 const DEFAULT_OPTIONS: SerializeOptions = {
   document,
   parentNodePrivacyLevel: NodePrivacyLevel.ALLOW,
-  serializationContext: SerializationContext.INITIAL_FULL_SNAPSHOT,
-  elementsScrollPositions: createElementsScrollPositions(),
+  serializationContext: {
+    status: SerializationContextStatus.INITIAL_FULL_SNAPSHOT,
+    elementsScrollPositions: createElementsScrollPositions(),
+  },
 }
 
 describe('serializeNodeWithId', () => {
@@ -57,14 +59,7 @@ describe('serializeNodeWithId', () => {
   describe('document serialization', () => {
     it('serializes a document', () => {
       const document = new DOMParser().parseFromString('<!doctype html><html>foo</html>', 'text/html')
-      expect(
-        serializeDocument(
-          document,
-          NodePrivacyLevel.ALLOW,
-          SerializationContext.INITIAL_FULL_SNAPSHOT,
-          createElementsScrollPositions()
-        )
-      ).toEqual({
+      expect(serializeDocument(document, NodePrivacyLevel.ALLOW, DEFAULT_OPTIONS.serializationContext)).toEqual({
         type: NodeType.Document,
         childNodes: [
           jasmine.objectContaining({ type: NodeType.DocumentType, name: 'html', publicId: '', systemId: '' }),
@@ -147,8 +142,7 @@ describe('serializeNodeWithId', () => {
         const serializedAttributes = (
           serializeNodeWithId(element, {
             ...DEFAULT_OPTIONS,
-            elementsScrollPositions,
-            serializationContext: SerializationContext.INITIAL_FULL_SNAPSHOT,
+            serializationContext: { status: SerializationContextStatus.INITIAL_FULL_SNAPSHOT, elementsScrollPositions },
           }) as ElementNode
         ).attributes
 
@@ -165,17 +159,15 @@ describe('serializeNodeWithId', () => {
         const serializedAttributes = (
           serializeNodeWithId(element, {
             ...DEFAULT_OPTIONS,
-            elementsScrollPositions,
-            serializationContext: SerializationContext.SUBSEQUENT_FULL_SNAPSHOT,
+            serializationContext: {
+              status: SerializationContextStatus.SUBSEQUENT_FULL_SNAPSHOT,
+              elementsScrollPositions,
+            },
           }) as ElementNode
         ).attributes
 
-        expect(serializedAttributes).not.toEqual(
-          jasmine.objectContaining({
-            rr_scrollLeft: 10,
-            rr_scrollTop: 20,
-          })
-        )
+        expect(serializedAttributes.rr_scrollLeft).toBeUndefined()
+        expect(serializedAttributes.rr_scrollTop).toBeUndefined()
         expect(elementsScrollPositions.get(element)).toBeUndefined()
       })
 
@@ -185,8 +177,10 @@ describe('serializeNodeWithId', () => {
         const serializedAttributes = (
           serializeNodeWithId(element, {
             ...DEFAULT_OPTIONS,
-            elementsScrollPositions,
-            serializationContext: SerializationContext.SUBSEQUENT_FULL_SNAPSHOT,
+            serializationContext: {
+              status: SerializationContextStatus.SUBSEQUENT_FULL_SNAPSHOT,
+              elementsScrollPositions,
+            },
           }) as ElementNode
         ).attributes
 
@@ -204,17 +198,12 @@ describe('serializeNodeWithId', () => {
         const serializedAttributes = (
           serializeNodeWithId(element, {
             ...DEFAULT_OPTIONS,
-            elementsScrollPositions,
-            serializationContext: SerializationContext.MUTATION,
+            serializationContext: { status: SerializationContextStatus.MUTATION },
           }) as ElementNode
         ).attributes
 
-        expect(serializedAttributes).not.toEqual(
-          jasmine.objectContaining({
-            rr_scrollLeft: 10,
-            rr_scrollTop: 20,
-          })
-        )
+        expect(serializedAttributes.rr_scrollLeft).toBeUndefined()
+        expect(serializedAttributes.rr_scrollTop).toBeUndefined()
       })
     })
 
@@ -580,8 +569,7 @@ describe('serializeDocumentNode handles', function testAllowDomTree() {
     const serializeOptionsMask: SerializeOptions = {
       document,
       parentNodePrivacyLevel: NodePrivacyLevel.MASK,
-      serializationContext: SerializationContext.INITIAL_FULL_SNAPSHOT,
-      elementsScrollPositions: createElementsScrollPositions(),
+      serializationContext: DEFAULT_OPTIONS.serializationContext,
     }
     expect(serializeDocumentNode(document, serializeOptionsMask)).toEqual({
       type: NodeType.Document,

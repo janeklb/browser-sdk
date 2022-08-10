@@ -8,7 +8,7 @@ import type {
 } from '@datadog/browser-rum-core'
 import { LifeCycleEventType } from '@datadog/browser-rum-core'
 
-import { record, SerializationContext } from '../domain/record'
+import { record } from '../domain/record'
 import type { DeflateWorker } from '../domain/segmentCollection'
 import { startSegmentCollection } from '../domain/segmentCollection'
 import { send } from '../transport/send'
@@ -33,7 +33,7 @@ export function startRecording(
 
   const {
     stop: stopRecording,
-    takeFullSnapshot,
+    takeSubsequentFullSnapshot,
     flushMutations,
   } = record({
     emit: addRecord,
@@ -51,7 +51,7 @@ export function startRecording(
   const { unsubscribe: unsubscribeViewCreated } = lifeCycle.subscribe(
     LifeCycleEventType.VIEW_CREATED,
     (view: ViewCreatedEvent) => {
-      takeFullSnapshot(view.startClocks.timeStamp, SerializationContext.SUBSEQUENT_FULL_SNAPSHOT)
+      takeSubsequentFullSnapshot(view.startClocks.timeStamp)
     }
   )
 
