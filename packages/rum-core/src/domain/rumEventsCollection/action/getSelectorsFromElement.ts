@@ -1,5 +1,10 @@
 import { arrayFrom, cssEscape, elementMatches } from '@datadog/browser-core'
 
+/**
+ * Stable attributes are attributes that are commonly used to identify parts of a UI (ex:
+ * component). Those attribute values should not be generated randomly (hardcoded most of the time)
+ * and stay the same across deploys. They are not necessarily unique across the document.
+ */
 const STABLE_ATTRIBUTES = [
   'data-dd-action-name',
   // Common test attributes (list provided by google recorder)
@@ -10,16 +15,18 @@ const STABLE_ATTRIBUTES = [
   'data-test-id',
   'data-qa-id',
   'data-testing',
-  // Fullstory decorator attributes:
+  // FullStory decorator attributes:
   'data-component',
   'data-element',
   'data-source-file',
 ]
 
 export function getSelectorsFromElement(element: Element, actionNameAttribute: string | undefined) {
-  const attributeSelectors = STABLE_ATTRIBUTES.map((attribute) => getAttributeSelector.bind(null, attribute))
+  let attributeSelectors = getStableAttributeSelectors()
   if (actionNameAttribute) {
-    attributeSelectors.unshift(getAttributeSelector.bind(null, actionNameAttribute))
+    attributeSelectors = [(element: Element) => getAttributeSelector(actionNameAttribute, element)].concat(
+      attributeSelectors
+    )
   }
   return {
     selector: getSelectorFromElement(element, [getIDSelector], [getClassSelector]),
@@ -42,16 +49,22 @@ function getSelectorFromElement(
   let element: Element | null = targetElement
 
   while (element && element.nodeName !== 'HTML') {
-    const uniqueSelector = findSelector(element, globallyUniqueSelectorStrategies, isSelectorUniqueGlobally)
-    if (uniqueSelector) {
-      targetElementSelector.unshift(uniqueSelector)
+    const globallyUniqueSelector = findSelector(element, globallyUniqueSelectorStrategies, isSelectorUniqueGlobally)
+    if (globallyUniqueSelector) {
+      targetElementSelector.unshift(globallyUniqueSelector)
       break
     }
 
-    targetElementSelector.unshift(
-      findSelector(element, uniqueAmongChildrenSelectorStrategies, isSelectorUniqueAmongChildren) ||
-        getPositionSelector(element)
+    const uniqueSelectorAmongChildren = findSelector(
+      element,
+      uniqueAmongChildrenSelectorStrategies,
+      isSelectorUniqueAmongChildren
     )
+    if (uniqueSelectorAmongChildren) {
+      targetElementSelector.unshift(uniqueSelectorAmongChildren)
+    } else {
+      targetElementSelector.unshift(getPositionSelector(element))
+    }
 
     element = element.parentElement
   }
@@ -70,6 +83,16 @@ function getClassSelector(element: Element): string | undefined {
     const orderedClassList = arrayFrom(element.classList).sort()
     return `${element.tagName}${orderedClassList.map((className) => `.${cssEscape(className)}`).join('')}`
   }
+}
+
+let stableAttributeSelectorsCache: GetSelector[] | undefined
+function getStableAttributeSelectors() {
+  if (!stableAttributeSelectorsCache) {
+    stableAttributeSelectorsCache = STABLE_ATTRIBUTES.map(
+      (attribute) => (element: Element) => getAttributeSelector(attribute, element)
+    )
+  }
+  return stableAttributeSelectorsCache
 }
 
 function getAttributeSelector(attributeName: string, element: Element): string | undefined {
