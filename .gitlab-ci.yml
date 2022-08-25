@@ -208,6 +208,7 @@ e2e-bs:
   resource_group: browserstack
   artifacts:
     when: always
+    paths: ['test-report/e2e-bs/specs.log']
     reports:
       junit: test-report/e2e-bs/*.xml
   script:
