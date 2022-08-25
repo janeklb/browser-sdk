@@ -66,7 +66,7 @@ type MouseInteractionCallBack = (record: BrowserIncrementalSnapshotRecord) => vo
 
 type ScrollCallback = (p: ScrollPosition) => void
 
-export type StyleSheetRuleCallback = (s: StyleSheetRule) => void
+export type StyleSheetCallback = (s: StyleSheetRule) => void
 
 type ViewportResizeCallback = (d: ViewportResizeDimension) => void
 
@@ -93,7 +93,7 @@ interface ObserverParam {
   visualViewportResizeCb: VisualViewportResizeCallback
   inputCb: InputCallback
   mediaInteractionCb: MediaInteractionCallback
-  styleSheetRuleCb: StyleSheetRuleCallback
+  styleSheetCb: StyleSheetCallback
   focusCb: FocusCallback
   frustrationCb: FrustrationCallback
 }
@@ -106,7 +106,7 @@ export function initObservers(o: ObserverParam): ListenerHandler {
   const viewportResizeHandler = initViewportResizeObserver(o.viewportResizeCb)
   const inputHandler = initInputObserver(o.inputCb, o.defaultPrivacyLevel)
   const mediaInteractionHandler = initMediaInteractionObserver(o.mediaInteractionCb, o.defaultPrivacyLevel)
-  const styleSheetObserver = initStyleSheetObserver(o.styleSheetRuleCb)
+  const styleSheetObserver = initStyleSheetObserver(o.styleSheetCb)
   const focusHandler = initFocusObserver(o.focusCb)
   const visualViewportResizeHandler = initVisualViewportResizeObserver(o.visualViewportResizeCb)
   const frustrationHandler = initFrustrationObserver(o.lifeCycle, o.frustrationCb)
@@ -350,11 +350,31 @@ export function initInputObserver(cb: InputCallback, defaultPrivacyLevel: Defaul
   }
 }
 
-export function initStyleSheetObserver(cb: StyleSheetRuleCallback): ListenerHandler {
+export function initStyleSheetObserver(cb: StyleSheetCallback): ListenerHandler {
   function checkStyleSheetAndCallback(styleSheet: CSSStyleSheet | null, callback: (id: number) => void): void {
     if (styleSheet && hasSerializedNode(styleSheet.ownerNode!)) {
       callback(getSerializedNodeId(styleSheet.ownerNode))
     }
+  }
+
+  const instrumentationStoppers = [
+    instrumentMethodAndCallOriginal(CSSStyleSheet.prototype, 'insertRule', {
+      before(rule, index) {
+        checkStyleSheetAndCallback(this, (id) => cb({ id, adds: [{ rule, index }] }))
+      },
+    }),
+    instrumentMethodAndCallOriginal(CSSStyleSheet.prototype, 'deleteRule', {
+      before(index) {
+        checkStyleSheetAndCallback(this, (id) => cb({ id, removes: [{ index }] }))
+      },
+    }),
+  ]
+
+  if (typeof CSSGroupingRule !== 'undefined') {
+    instrumentGroupingCSSRuleClass(CSSGroupingRule)
+  } else {
+    instrumentGroupingCSSRuleClass(CSSMediaRule)
+    instrumentGroupingCSSRuleClass(CSSSupportsRule)
   }
 
   function instrumentGroupingCSSRuleClass(cls: GroupingCSSRuleTypes) {
@@ -382,26 +402,6 @@ export function initStyleSheetObserver(cb: StyleSheetRuleCallback): ListenerHand
         },
       })
     )
-  }
-
-  const instrumentationStoppers = [
-    instrumentMethodAndCallOriginal(CSSStyleSheet.prototype, 'insertRule', {
-      before(rule, index) {
-        checkStyleSheetAndCallback(this, (id) => cb({ id, adds: [{ rule, index }] }))
-      },
-    }),
-    instrumentMethodAndCallOriginal(CSSStyleSheet.prototype, 'deleteRule', {
-      before(index) {
-        checkStyleSheetAndCallback(this, (id) => cb({ id, removes: [{ index }] }))
-      },
-    }),
-  ]
-
-  if (typeof CSSGroupingRule !== undefined) {
-    instrumentGroupingCSSRuleClass(CSSGroupingRule)
-  } else {
-    instrumentGroupingCSSRuleClass(CSSMediaRule)
-    instrumentGroupingCSSRuleClass(CSSSupportsRule)
   }
 
   return () => instrumentationStoppers.forEach((stopper) => stopper.stop())

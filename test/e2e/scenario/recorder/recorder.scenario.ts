@@ -656,11 +656,11 @@ describe('recorder', () => {
       .withBody(
         html`
           <style>
-            @media condition-1 {
+            @supports (display: grid) {
               .foo {
               }
             }
-            @media condition-2 {
+            @media condition {
               .bar {
               }
               .baz {
@@ -671,12 +671,12 @@ describe('recorder', () => {
       )
       .run(async ({ serverEvents }) => {
         await browserExecute(() => {
-          const firstGroupingRule = document.styleSheets[0].cssRules[0] as CSSMediaRule
-          const secondGroupingRule = document.styleSheets[0].cssRules[1] as CSSGroupingRule
+          const supportsRule = document.styleSheets[0].cssRules[0] as CSSGroupingRule
+          const mediaRule = document.styleSheets[0].cssRules[1] as CSSGroupingRule
 
-          firstGroupingRule.insertRule('.inserted {}', 0)
-          firstGroupingRule.insertRule('.added {}', 1)
-          secondGroupingRule.deleteRule(1)
+          supportsRule.insertRule('.inserted {}', 0)
+          supportsRule.insertRule('.added {}', 1)
+          mediaRule.deleteRule(1)
         })
 
         await flushEvents()
