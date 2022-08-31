@@ -1,6 +1,5 @@
 import { mockClock } from '../../test/specHelper'
 import type { Clock } from '../../test/specHelper'
-import { ONE_SECOND } from '../tools/utils'
 import type { RetryState } from './sendWithRetryStrategy'
 import {
   newRetryState,
@@ -8,6 +7,7 @@ import {
   MAX_ONGOING_BYTES_COUNT,
   MAX_ONGOING_REQUESTS,
   MAX_QUEUE_BYTES_COUNT,
+  INITIAL_BACKOFF_TIME,
 } from './sendWithRetryStrategy'
 import type { Payload, HttpResponse } from './httpRequest'
 
@@ -105,16 +105,6 @@ describe('sendWithRetryStrategy', () => {
       sendRequest()
       expect(state.queuedPayloads.size()).toBe(1)
     })
-
-    it('should not queue payload bigger than queue limit', () => {
-      sendRequest()
-      expect(state.bandwidthMonitor.ongoingRequestCount).toBe(1)
-      expect(state.queuedPayloads.size()).toBe(0)
-
-      sendRequest({ bytesCount: MAX_QUEUE_BYTES_COUNT + 1 })
-      expect(state.bandwidthMonitor.ongoingRequestCount).toBe(1)
-      expect(state.queuedPayloads.size()).toBe(0)
-    })
   })
 
   describe('dequeue:', () => {
@@ -131,65 +121,84 @@ describe('sendWithRetryStrategy', () => {
       expect(state.queuedPayloads.size()).toBe(0)
     })
 
-    it('should remove the oldest payloads when a new payload would overflow queue bytes limit', () => {
+    it('should stop queueing new payloads when queue bytes limit is reached', () => {
       sendRequest({ bytesCount: MAX_ONGOING_BYTES_COUNT })
-      sendRequest({ bytesCount: MAX_QUEUE_BYTES_COUNT - 10 })
-      sendRequest({ bytesCount: 10 })
+      sendRequest({ bytesCount: MAX_QUEUE_BYTES_COUNT - 20 })
+      sendRequest({ bytesCount: 30 })
       expect(state.queuedPayloads.size()).toBe(2)
-      expect(state.queuedPayloads.bytesCount).toBe(MAX_QUEUE_BYTES_COUNT)
+      expect(state.queuedPayloads.bytesCount).toBe(MAX_QUEUE_BYTES_COUNT + 10)
 
       sendRequest({ bytesCount: 1 })
       expect(state.queuedPayloads.size()).toBe(2)
-      expect(state.queuedPayloads.bytesCount).toBe(11)
+      expect(state.queuedPayloads.bytesCount).toBe(MAX_QUEUE_BYTES_COUNT + 10)
     })
-  })
 
-  describe('when a request fails:', () => {
-    it('should start queueing following requests', () => {
-      sendRequest()
-      sendStub.respondWith(0, { status: 500 })
-      expect(state.queuedPayloads.size()).toBe(1)
-
-      sendRequest()
-      expect(state.queuedPayloads.size()).toBe(2)
-      sendRequest()
+    it('should respect request order', () => {
+      sendRequest({ bytesCount: MAX_ONGOING_BYTES_COUNT - 10 })
+      sendRequest({ bytesCount: 20 })
+      sendRequest({ bytesCount: MAX_ONGOING_BYTES_COUNT - 15 })
+      sendRequest({ bytesCount: 10 })
       expect(state.queuedPayloads.size()).toBe(3)
-    })
+      expect(state.queuedPayloads.bytesCount).toBe(20 + (MAX_ONGOING_BYTES_COUNT - 15) + 10)
 
-    it('should send queued requests if another ongoing request succeed', () => {
-      sendRequest()
-      sendRequest()
-      sendStub.respondWith(0, { status: 500 })
-      expect(state.bandwidthMonitor.ongoingRequestCount).toBe(1)
-      expect(state.queuedPayloads.size()).toBe(1)
-
-      sendRequest()
-      expect(state.bandwidthMonitor.ongoingRequestCount).toBe(1)
+      sendStub.respondWith(0, { status: 200 })
       expect(state.queuedPayloads.size()).toBe(2)
+      expect(state.queuedPayloads.bytesCount).toBe(MAX_ONGOING_BYTES_COUNT - 15 + 10)
 
       sendStub.respondWith(1, { status: 200 })
-      expect(state.bandwidthMonitor.ongoingRequestCount).toBe(2)
       expect(state.queuedPayloads.size()).toBe(0)
     })
   })
+  ;[
+    { description: 'when the intake returns error:', status: 500 },
+    { description: 'when network is down:', status: 0 },
+  ].forEach(({ description, status }) => {
+    describe(description, () => {
+      it('should start queueing following requests', () => {
+        sendRequest()
+        sendStub.respondWith(0, { status })
+        expect(state.queuedPayloads.size()).toBe(1)
 
-  describe('when intake offline:', () => {
+        sendRequest()
+        expect(state.queuedPayloads.size()).toBe(2)
+        sendRequest()
+        expect(state.queuedPayloads.size()).toBe(3)
+      })
+
+      it('should send queued requests if another ongoing request succeed', () => {
+        sendRequest()
+        sendRequest()
+        sendStub.respondWith(0, { status })
+        expect(state.bandwidthMonitor.ongoingRequestCount).toBe(1)
+        expect(state.queuedPayloads.size()).toBe(1)
+
+        sendRequest()
+        expect(state.bandwidthMonitor.ongoingRequestCount).toBe(1)
+        expect(state.queuedPayloads.size()).toBe(2)
+
+        sendStub.respondWith(1, { status: 200 })
+        expect(state.bandwidthMonitor.ongoingRequestCount).toBe(2)
+        expect(state.queuedPayloads.size()).toBe(0)
+      })
+    })
+  })
+
+  describe('when transport down:', () => {
     it('should regularly try to send first queued request', () => {
       sendRequest()
       sendStub.respondWith(0, { status: 500 })
       expect(state.bandwidthMonitor.ongoingRequestCount).toBe(0)
 
-      clock.tick(ONE_SECOND)
+      clock.tick(INITIAL_BACKOFF_TIME)
       expect(state.bandwidthMonitor.ongoingRequestCount).toBe(1)
       sendStub.respondWith(1, { status: 500 })
 
-      clock.tick(2 * ONE_SECOND)
+      clock.tick(2 * INITIAL_BACKOFF_TIME)
       expect(state.bandwidthMonitor.ongoingRequestCount).toBe(1)
       sendStub.respondWith(2, { status: 500 })
 
-      clock.tick(4 * ONE_SECOND)
+      clock.tick(4 * INITIAL_BACKOFF_TIME)
       expect(state.bandwidthMonitor.ongoingRequestCount).toBe(1)
-      sendStub.respondWith(3, { status: 500 })
     })
 
     it('should send queued requests after first successful request', () => {
@@ -201,7 +210,7 @@ describe('sendWithRetryStrategy', () => {
       expect(state.bandwidthMonitor.ongoingRequestCount).toBe(0)
       expect(state.queuedPayloads.size()).toBe(4)
 
-      clock.tick(ONE_SECOND)
+      clock.tick(INITIAL_BACKOFF_TIME)
       expect(state.bandwidthMonitor.ongoingRequestCount).toBe(1)
       sendStub.respondWith(1, { status: 200 })
 
