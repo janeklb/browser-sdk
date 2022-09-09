@@ -78,8 +78,16 @@ export function trackClickActions(
   lifeCycle.subscribe(LifeCycleEventType.BEFORE_UNLOAD, stopClickChain)
   lifeCycle.subscribe(LifeCycleEventType.VIEW_ENDED, stopClickChain)
 
-  const { stop: stopActionEventsListener } = listenActionEvents(() =>
-    onPointerDown(configuration, lifeCycle, domMutationObservable, history, stopObservable, appendClickToClickChain)
+  const { stop: stopActionEventsListener } = listenActionEvents((pointerDownEvent) =>
+    onPointerDown(
+      configuration,
+      lifeCycle,
+      domMutationObservable,
+      history,
+      stopObservable,
+      appendClickToClickChain,
+      pointerDownEvent
+    )
   )
 
   const actionContexts: ActionContexts = {
@@ -118,24 +126,25 @@ function onPointerDown(
   domMutationObservable: Observable<void>,
   history: ClickActionIdHistory,
   stopObservable: Observable<void>,
-  appendClickToClickChain: (click: Click) => void
+  appendClickToClickChain: (click: Click) => void,
+  pointerDownEvent: MouseEventOnElement
 ) {
+  if (!configuration.trackFrustrations && history.find()) {
+    // TODO: remove this in a future major version. To keep retrocompatibility, ignore any new
+    // action if another one is already occurring.
+    return
+  }
+
+  const clickActionBase = computeClickActionBase(pointerDownEvent, configuration.actionNameAttribute)
+  if (!configuration.trackFrustrations && !clickActionBase.name) {
+    // TODO: remove this in a future major version. To keep retrocompatibility, ignore any action
+    // with a blank name
+    return
+  }
+
   return {
-    onClick({ event, getUserActivity }: OnClickContext) {
-      if (!configuration.trackFrustrations && history.find()) {
-        // TODO: remove this in a future major version. To keep retrocompatibility, ignore any new
-        // action if another one is already occurring.
-        return
-      }
-
-      const clickActionBase = computeClickActionBase(event, configuration.actionNameAttribute)
-      if (!configuration.trackFrustrations && !clickActionBase.name) {
-        // TODO: remove this in a future major version. To keep retrocompatibility, ignore any action
-        // with a blank name
-        return
-      }
-
-      const click = newClick(lifeCycle, history, getUserActivity, clickActionBase)
+    onClick({ event: clickEvent, getUserActivity }: OnClickContext) {
+      const click = newClick(lifeCycle, history, getUserActivity, clickActionBase, clickEvent)
 
       if (configuration.trackFrustrations) {
         appendClickToClickChain(click)
@@ -146,7 +155,7 @@ function onPointerDown(
         domMutationObservable,
         configuration,
         (pageActivityEndEvent) => {
-          if (pageActivityEndEvent.hadActivity && pageActivityEndEvent.end < clickActionBase.startClocks.timeStamp) {
+          if (pageActivityEndEvent.hadActivity && pageActivityEndEvent.end < click.startClocks.timeStamp) {
             // If the clock is looking weird, just discard the click
             click.discard()
           } else {
@@ -210,8 +219,6 @@ function computeClickActionBase(event: MouseEventOnElement, actionNameAttribute?
     target,
     position,
     name: getActionNameFromElement(event.target, actionNameAttribute),
-    event,
-    startClocks: clocksNow(),
   }
 }
 
@@ -230,10 +237,12 @@ function newClick(
   lifeCycle: LifeCycle,
   history: ClickActionIdHistory,
   getUserActivity: OnClickContext['getUserActivity'],
-  clickActionBase: Pick<ClickAction, 'startClocks' | 'event' | 'name' | 'target' | 'position'>
+  clickActionBase: Pick<ClickAction, 'name' | 'target' | 'position'>,
+  clickEvent: MouseEventOnElement
 ) {
   const id = generateUUID()
-  const historyEntry = history.add(id, clickActionBase.startClocks.relative)
+  const startClocks = clocksNow()
+  const historyEntry = history.add(id, startClocks.relative)
   const eventCountsSubscription = trackEventCounts(lifeCycle)
   let status = ClickStatus.ONGOING
   let activityEndTime: undefined | TimeStamp
@@ -256,7 +265,7 @@ function newClick(
   }
 
   return {
-    event: clickActionBase.event,
+    event: clickEvent,
     stop,
     stopObservable,
 
@@ -270,10 +279,11 @@ function newClick(
     addFrustration: (frustrationType: FrustrationType) => {
       frustrationTypes.push(frustrationType)
     },
+    startClocks,
 
     isStopped: () => status === ClickStatus.STOPPED || status === ClickStatus.FINALIZED,
 
-    clone: () => newClick(lifeCycle, history, getUserActivity, clickActionBase),
+    clone: () => newClick(lifeCycle, history, getUserActivity, clickActionBase, clickEvent),
 
     validate: (domEvents?: Event[]) => {
       stop()
@@ -285,7 +295,8 @@ function newClick(
       const clickAction: ClickAction = assign(
         {
           type: ActionType.CLICK as const,
-          duration: activityEndTime && elapsed(clickActionBase.startClocks.timeStamp, activityEndTime),
+          duration: activityEndTime && elapsed(startClocks.timeStamp, activityEndTime),
+          startClocks,
           id,
           frustrationTypes,
           counts: {
@@ -293,7 +304,8 @@ function newClick(
             errorCount,
             longTaskCount,
           },
-          events: domEvents ?? [clickActionBase.event],
+          events: domEvents ?? [clickEvent],
+          event: clickEvent,
         },
         clickActionBase
       )
