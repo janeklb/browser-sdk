@@ -5,7 +5,7 @@ export interface OnClickContext {
   getUserActivity(): { selection: boolean; input: boolean }
 }
 
-export function listenActionEvents({ onClick }: { onClick(context: OnClickContext): void }) {
+export function listenActionEvents(onClick: (context: OnClickContext) => void) {
   let hasSelectionChanged = false
   let selectionEmptyAtMouseDown: boolean
   let hasInputChanged = false

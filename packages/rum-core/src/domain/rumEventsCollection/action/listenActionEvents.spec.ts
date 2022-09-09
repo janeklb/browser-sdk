@@ -9,7 +9,7 @@ describe('listenActionEvents', () => {
 
   beforeEach(() => {
     onClickSpy = jasmine.createSpy()
-    ;({ stop: stopListenEvents } = listenActionEvents({ onClick: onClickSpy }))
+    ;({ stop: stopListenEvents } = listenActionEvents(onClickSpy))
   })
 
   afterEach(() => {
