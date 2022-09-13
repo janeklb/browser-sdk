@@ -1,22 +1,30 @@
 import { addEventListener, DOM_EVENT, monitor } from '@datadog/browser-core'
 
+export type MouseEventOnElement = MouseEvent & { target: Element }
+
+export type OnPointerDownCallback = (event: MouseEventOnElement) => { onClick: OnClickCallback } | undefined
+export type OnClickCallback = (context: OnClickContext) => void
 export interface OnClickContext {
-  event: MouseEvent & { target: Element }
+  event: MouseEventOnElement
   getUserActivity(): { selection: boolean; input: boolean }
 }
 
-export function listenActionEvents({ onClick }: { onClick(context: OnClickContext): void }) {
+export function listenActionEvents(onPointerDown: OnPointerDownCallback) {
   let hasSelectionChanged = false
-  let selectionEmptyAtMouseDown: boolean
+  let selectionEmptyAtPointerDown: boolean
   let hasInputChanged = false
+  let onClick: ((context: OnClickContext) => void) | undefined
 
   const listeners = [
     addEventListener(
       window,
-      DOM_EVENT.MOUSE_DOWN,
-      () => {
+      DOM_EVENT.POINTER_DOWN,
+      (event) => {
         hasSelectionChanged = false
-        selectionEmptyAtMouseDown = isSelectionEmpty()
+        selectionEmptyAtPointerDown = isSelectionEmpty()
+        if (isMouseEventOnElement(event)) {
+          onClick = onPointerDown(event)?.onClick
+        }
       },
       { capture: true }
     ),
@@ -25,7 +33,7 @@ export function listenActionEvents({ onClick }: { onClick(context: OnClickContex
       window,
       DOM_EVENT.SELECTION_CHANGE,
       () => {
-        if (!selectionEmptyAtMouseDown || !isSelectionEmpty()) {
+        if (!selectionEmptyAtPointerDown || !isSelectionEmpty()) {
           hasSelectionChanged = true
         }
       },
@@ -36,7 +44,7 @@ export function listenActionEvents({ onClick }: { onClick(context: OnClickContex
       window,
       DOM_EVENT.CLICK,
       (clickEvent: MouseEvent) => {
-        if (clickEvent.target instanceof Element) {
+        if (isMouseEventOnElement(clickEvent) && onClick) {
           // Use a scoped variable to make sure the value is not changed by other clicks
           const userActivity = {
             selection: hasSelectionChanged,
@@ -51,9 +59,10 @@ export function listenActionEvents({ onClick }: { onClick(context: OnClickContex
           }
 
           onClick({
-            event: clickEvent as MouseEvent & { target: Element },
+            event: clickEvent,
             getUserActivity: () => userActivity,
           })
+          onClick = undefined
         }
       },
       { capture: true }
@@ -79,4 +88,8 @@ export function listenActionEvents({ onClick }: { onClick(context: OnClickContex
 function isSelectionEmpty(): boolean {
   const selection = window.getSelection()
   return !selection || selection.isCollapsed
+}
+
+function isMouseEventOnElement(event: Event): event is MouseEventOnElement {
+  return event.target instanceof Element
 }
