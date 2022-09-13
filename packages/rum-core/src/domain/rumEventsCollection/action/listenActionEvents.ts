@@ -9,7 +9,7 @@ export interface OnClickContext {
   getUserActivity(): { selection: boolean; input: boolean }
 }
 
-export function listenActionEvents(onPointerDown: OnPointerDownCallback) {
+export function listenActionEvents({ onPointerDown }: { onPointerDown: OnPointerDownCallback }) {
   let hasSelectionChanged = false
   let selectionEmptyAtPointerDown: boolean
   let hasInputChanged = false

@@ -11,7 +11,7 @@ describe('listenActionEvents', () => {
   beforeEach(() => {
     onClickSpy = jasmine.createSpy()
     onPointerDownSpy = jasmine.createSpy().and.returnValue({ onClick: onClickSpy })
-    ;({ stop: stopListenEvents } = listenActionEvents(onPointerDownSpy))
+    ;({ stop: stopListenEvents } = listenActionEvents({ onPointerDown: onPointerDownSpy }))
   })
 
   afterEach(() => {
