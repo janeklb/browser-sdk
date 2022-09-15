@@ -22,7 +22,7 @@ describe('listenActionEvents', () => {
     stopListenEvents()
   })
 
-  it('listen to mousedown events', () => {
+  it('listen to pointerdown events', () => {
     emulateClick()
     expect(actionEventsHooks.onPointerDown).toHaveBeenCalledOnceWith(jasmine.objectContaining({ type: 'pointerdown' }))
   })
@@ -52,6 +52,15 @@ describe('listenActionEvents', () => {
     actionEventsHooks.onPointerDown.and.returnValue(context)
     emulateClick()
     expect(actionEventsHooks.onClick.calls.mostRecent().args[0]).toBe(context)
+  })
+
+  it('ignore "click" events if no "pointerdown" event happened since the previous "click" event', () => {
+    emulateClick()
+    actionEventsHooks.onClick.calls.reset()
+
+    window.dispatchEvent(createNewEvent('click', { target: document.body }))
+
+    expect(actionEventsHooks.onClick).not.toHaveBeenCalled()
   })
 
   describe('selection change', () => {
