@@ -616,6 +616,12 @@ describe('serializeDocumentNode handles', function testAllowDomTree() {
 })
 
 describe('serializeAttribute ', () => {
+  beforeEach(() => {
+    if (isIE()) {
+      pending('IE not supported')
+    }
+  })
+
   it('truncates "data:" URIs after long string length', () => {
     const node = document.createElement('p')
 
