@@ -125,13 +125,13 @@ describe('getSelectorFromElement', () => {
       it("uses a stable attribute selector and continue recursing if it's not unique globally", () => {
         expect(
           getDefaultSelector(`
-            <button target data-testid="foo"></button>
+            <button data-testid="foo"></button>
 
             <div>
-              <button data-testid="foo"></button>
+              <button data-testid="foo" target></button>
             </div>
           `)
-        ).toBe('BODY>BUTTON[data-testid="foo"]')
+        ).toBe('BODY>DIV>BUTTON[data-testid="foo"]')
       })
     })
   })
@@ -187,6 +187,9 @@ describe('getSelectorFromElement', () => {
     const getSelectorAllTogether = getSelector.bind(null, 'selector_all_together')
 
     it('stops recursing when the composed selector is unique', () => {
+      if (isIE()) {
+        pending('IE does not support :scope selectors')
+      }
       expect(
         getSelectorAllTogether(`
           <div><div><button></button></div></div>
