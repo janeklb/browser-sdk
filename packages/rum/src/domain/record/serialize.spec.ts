@@ -1,6 +1,6 @@
 import { isIE } from '@datadog/browser-core'
 import type { RumConfiguration } from '@datadog/browser-rum-core'
-import { DEFAULT_PROGRAMMATIC_ACTION_NAME_ATTRIBUTE } from '@datadog/browser-rum-core'
+import { LifeCycleEventType, DEFAULT_PROGRAMMATIC_ACTION_NAME_ATTRIBUTE, LifeCycle } from '@datadog/browser-rum-core'
 import {
   NodePrivacyLevel,
   PRIVACY_ATTR_NAME,
@@ -40,10 +40,13 @@ const DEFAULT_SERIALIZATION_CONTEXT = {
   elementsScrollPositions: createElementsScrollPositions(),
 }
 
+const DEFAULT_LIFE_CYCLE = new LifeCycle()
+
 const DEFAULT_OPTIONS: SerializeOptions = {
   parentNodePrivacyLevel: NodePrivacyLevel.ALLOW,
   serializationContext: DEFAULT_SERIALIZATION_CONTEXT,
   configuration: DEFAULT_CONFIGURATION,
+  lifeCycle: DEFAULT_LIFE_CYCLE,
 }
 
 describe('serializeNodeWithId', () => {
@@ -65,7 +68,9 @@ describe('serializeNodeWithId', () => {
   describe('document serialization', () => {
     it('serializes a document', () => {
       const document = new DOMParser().parseFromString('<!doctype html><html>foo</html>', 'text/html')
-      expect(serializeDocument(document, DEFAULT_CONFIGURATION, DEFAULT_SERIALIZATION_CONTEXT)).toEqual({
+      expect(
+        serializeDocument(document, DEFAULT_CONFIGURATION, DEFAULT_SERIALIZATION_CONTEXT, DEFAULT_LIFE_CYCLE)
+      ).toEqual({
         type: NodeType.Document,
         childNodes: [
           jasmine.objectContaining({ type: NodeType.DocumentType, name: 'html', publicId: '', systemId: '' }),
@@ -77,8 +82,16 @@ describe('serializeNodeWithId', () => {
   })
 
   describe('elements serialization', () => {
+    let lifeCycle: LifeCycle
+    let addShadowRootSpy: jasmine.Spy
+    beforeEach(() => {
+      addShadowRootSpy = jasmine.createSpy('addShadowRoot')
+      lifeCycle = new LifeCycle()
+      lifeCycle.subscribe(LifeCycleEventType.ADD_SHADOW_ROOT, addShadowRootSpy)
+    })
     it('serializes a div', () => {
-      expect(serializeNodeWithId(document.createElement('div'), DEFAULT_OPTIONS)).toEqual({
+      const lifeCycleNotifySpy = spyOn(new LifeCycle(), 'notify')
+      expect(serializeNodeWithId(document.createElement('div'), { ...DEFAULT_OPTIONS, lifeCycle })).toEqual({
         type: NodeType.Element,
         tagName: 'div',
         attributes: {},
@@ -87,6 +100,7 @@ describe('serializeNodeWithId', () => {
         childNodes: [],
         id: jasmine.any(Number) as unknown as number,
       })
+      expect(lifeCycleNotifySpy).toHaveBeenCalledTimes(0)
     })
 
     it('serializes hidden elements', () => {
@@ -424,7 +438,7 @@ describe('serializeNodeWithId', () => {
       div.attachShadow({ mode: 'open' })
       div.shadowRoot!.appendChild(document.createElement('hr'))
 
-      expect(serializeNodeWithId(div, DEFAULT_OPTIONS)).toEqual({
+      expect(serializeNodeWithId(div, { ...DEFAULT_OPTIONS, lifeCycle })).toEqual({
         type: NodeType.Element,
         tagName: 'div',
         attributes: {},
@@ -443,6 +457,9 @@ describe('serializeNodeWithId', () => {
         id: jasmine.any(Number) as unknown as number,
         isShadowHost: true,
       })
+
+      expect(addShadowRootSpy).toHaveBeenCalledTimes(1)
+      expect(addShadowRootSpy).toHaveBeenCalledWith(div.shadowRoot as any)
     })
   })
 

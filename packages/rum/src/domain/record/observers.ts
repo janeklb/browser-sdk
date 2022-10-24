@@ -99,7 +99,7 @@ interface ObserverParam {
 }
 
 export function initObservers(o: ObserverParam): ListenerHandler {
-  const mutationHandler = initMutationObserver(o.mutationController, o.mutationCb, o.configuration)
+  const mutationHandler = initMutationObservers(o)
   const mousemoveHandler = initMoveObserver(o.mousemoveCb)
   const mouseInteractionHandler = initMouseInteractionObserver(
     o.mouseInteractionCb,
@@ -132,12 +132,42 @@ export function initObservers(o: ObserverParam): ListenerHandler {
   }
 }
 
+function initMutationObservers(o: ObserverParam) {
+  const callbacks = new Map<Node, () => void>()
+  callbacks.set(
+    document,
+    initMutationObserver(o.mutationController, o.mutationCb, o.configuration, document, o.lifeCycle)
+  )
+  function addShadowRoot(shadowRoot: ShadowRoot) {
+    callbacks.set(
+      shadowRoot,
+      initMutationObserver(o.mutationController, o.mutationCb, o.configuration, shadowRoot, o.lifeCycle)
+    )
+  }
+  function removeShadowRoot(shadowRoot: ShadowRoot) {
+    const callback = callbacks.get(shadowRoot)
+    if (callback === undefined) {
+      // TODO: add telemetry
+      return
+    }
+    callback()
+    callbacks.delete(shadowRoot)
+  }
+  o.lifeCycle.subscribe(LifeCycleEventType.ADD_SHADOW_ROOT, addShadowRoot)
+  o.lifeCycle.subscribe(LifeCycleEventType.REMOVE_SHADOW_ROOT, removeShadowRoot)
+  return () => {
+    callbacks.forEach((cb) => cb())
+  }
+}
+
 function initMutationObserver(
   mutationController: MutationController,
   cb: MutationCallBack,
-  configuration: RumConfiguration
+  configuration: RumConfiguration,
+  target: Node,
+  lifecycle: LifeCycle
 ) {
-  return startMutationObserver(mutationController, cb, configuration).stop
+  return startMutationObserver(mutationController, cb, configuration, target, lifecycle).stop
 }
 
 function initMoveObserver(cb: MousemoveCallBack): ListenerHandler {

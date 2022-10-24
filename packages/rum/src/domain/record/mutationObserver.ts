@@ -1,5 +1,5 @@
 import { monitor, noop } from '@datadog/browser-core'
-import type { RumConfiguration } from '@datadog/browser-rum-core'
+import type { LifeCycle, RumConfiguration } from '@datadog/browser-rum-core'
 import { getMutationObserverConstructor } from '@datadog/browser-rum-core'
 import { NodePrivacyLevel } from '../../constants'
 import type { AddedNodeMutation, AttributeMutation, RemovedNodeMutation, TextMutation } from '../../types'
@@ -50,19 +50,26 @@ export type RumMutationRecord =
 export function startMutationObserver(
   controller: MutationController,
   mutationCallback: MutationCallBack,
-  configuration: RumConfiguration
+  configuration: RumConfiguration,
+  target: Node,
+  lifecycle: LifeCycle
 ) {
   const MutationObserver = getMutationObserverConstructor()
   if (!MutationObserver) {
     return { stop: noop }
   }
   const mutationBatch = createMutationBatch((mutations) => {
-    processMutations(mutations.concat(observer.takeRecords() as RumMutationRecord[]), mutationCallback, configuration)
+    processMutations(
+      mutations.concat(observer.takeRecords() as RumMutationRecord[]),
+      mutationCallback,
+      configuration,
+      lifecycle
+    )
   })
 
   const observer = new MutationObserver(monitor(mutationBatch.addMutations) as (callback: MutationRecord[]) => void)
 
-  observer.observe(document, {
+  observer.observe(target, {
     attributeOldValue: true,
     attributes: true,
     characterData: true,
@@ -98,7 +105,8 @@ export class MutationController {
 function processMutations(
   mutations: RumMutationRecord[],
   mutationCallback: MutationCallBack,
-  configuration: RumConfiguration
+  configuration: RumConfiguration,
+  lifecycle: LifeCycle
 ) {
   // Discard any mutation with a 'target' node that:
   // * isn't injected in the current document or isn't known/serialized yet: those nodes are likely
@@ -115,7 +123,8 @@ function processMutations(
     filteredMutations.filter(
       (mutation): mutation is WithSerializedTarget<RumChildListMutationRecord> => mutation.type === 'childList'
     ),
-    configuration
+    configuration,
+    lifecycle
   )
 
   const texts = processCharacterDataMutations(
@@ -148,7 +157,8 @@ function processMutations(
 
 function processChildListMutations(
   mutations: Array<WithSerializedTarget<RumChildListMutationRecord>>,
-  configuration: RumConfiguration
+  configuration: RumConfiguration,
+  lifeCycle: LifeCycle
 ) {
   // First, we iterate over mutations to collect:
   //
@@ -208,6 +218,7 @@ function processChildListMutations(
       parentNodePrivacyLevel,
       serializationContext: { status: SerializationContextStatus.MUTATION },
       configuration,
+      lifeCycle,
     })
     if (!serializedNode) {
       continue

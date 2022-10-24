@@ -33,11 +33,15 @@ export const enum LifeCycleEventType {
   RAW_RUM_EVENT_COLLECTED,
   RUM_EVENT_COLLECTED,
   RAW_ERROR_COLLECTED,
+  ADD_SHADOW_ROOT,
+  REMOVE_SHADOW_ROOT,
 }
 
 export class LifeCycle {
   private callbacks: { [key in LifeCycleEventType]?: Array<(data: any) => void> } = {}
 
+  notify(eventType: LifeCycleEventType.ADD_SHADOW_ROOT, shadowRoot: ShadowRoot): void
+  notify(eventType: LifeCycleEventType.REMOVE_SHADOW_ROOT, shadowRoot: ShadowRoot): void
   notify(eventType: LifeCycleEventType.PERFORMANCE_ENTRIES_COLLECTED, data: RumPerformanceEntry[]): void
   notify(eventType: LifeCycleEventType.REQUEST_STARTED, data: RequestStartEvent): void
   notify(eventType: LifeCycleEventType.REQUEST_COMPLETED, data: RequestCompleteEvent): void
@@ -64,6 +68,8 @@ export class LifeCycle {
     }
   }
 
+  subscribe(eventType: LifeCycleEventType.ADD_SHADOW_ROOT, callback: (shadowRoot: ShadowRoot) => void): void
+  subscribe(eventType: LifeCycleEventType.REMOVE_SHADOW_ROOT, callback: (shadowRoot: ShadowRoot) => void): void
   subscribe(
     eventType: LifeCycleEventType.PERFORMANCE_ENTRIES_COLLECTED,
     callback: (data: RumPerformanceEntry[]) => void

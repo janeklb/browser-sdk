@@ -11,6 +11,7 @@ import { serializeDocument, SerializationContextStatus } from './serialize'
 import { createElementsScrollPositions } from './elementsScrollPositions'
 
 const DEFAULT_CONFIGURATION = { defaultPrivacyLevel: NodePrivacyLevel.ALLOW } as RumConfiguration
+const DEFAULT_LIFE_CYCLE = new LifeCycle()
 
 describe('initInputObserver', () => {
   let stopInputObserver: () => void
@@ -29,10 +30,15 @@ describe('initInputObserver', () => {
     sandbox.appendChild(input)
     document.body.appendChild(sandbox)
 
-    serializeDocument(document, DEFAULT_CONFIGURATION, {
-      status: SerializationContextStatus.INITIAL_FULL_SNAPSHOT,
-      elementsScrollPositions: createElementsScrollPositions(),
-    })
+    serializeDocument(
+      document,
+      DEFAULT_CONFIGURATION,
+      {
+        status: SerializationContextStatus.INITIAL_FULL_SNAPSHOT,
+        elementsScrollPositions: createElementsScrollPositions(),
+      },
+      DEFAULT_LIFE_CYCLE
+    )
   })
 
   afterEach(() => {
@@ -173,10 +179,15 @@ describe('initStyleSheetObserver', () => {
     document.head.appendChild(styleElement)
     styleSheet = styleElement.sheet!
 
-    serializeDocument(document, DEFAULT_CONFIGURATION, {
-      status: SerializationContextStatus.INITIAL_FULL_SNAPSHOT,
-      elementsScrollPositions: createElementsScrollPositions(),
-    })
+    serializeDocument(
+      document,
+      DEFAULT_CONFIGURATION,
+      {
+        status: SerializationContextStatus.INITIAL_FULL_SNAPSHOT,
+        elementsScrollPositions: createElementsScrollPositions(),
+      },
+      DEFAULT_LIFE_CYCLE
+    )
   })
 
   afterEach(() => {

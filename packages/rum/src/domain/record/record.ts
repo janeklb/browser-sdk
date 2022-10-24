@@ -69,7 +69,7 @@ export function record(options: RecordOptions): RecordAPI {
 
     emit({
       data: {
-        node: serializeDocument(document, options.configuration, serializationContext),
+        node: serializeDocument(document, options.configuration, serializationContext, options.lifeCycle),
         initialOffset: {
           left: getScrollX(),
           top: getScrollY(),

@@ -1,5 +1,6 @@
 import { DefaultPrivacyLevel, isIE } from '@datadog/browser-core'
 import type { RumConfiguration } from '@datadog/browser-rum-core'
+import { LifeCycle } from '@datadog/browser-rum-core'
 import { collectAsyncCalls, createMutationPayloadValidator } from '../../../test/utils'
 import {
   NodePrivacyLevel,
@@ -15,6 +16,8 @@ import { sortAddedAndMovedNodes, startMutationObserver, MutationController } fro
 import type { MutationCallBack } from './observers'
 import { createElementsScrollPositions } from './elementsScrollPositions'
 
+const DEFAULT_LIFE_CYCLE = new LifeCycle()
+
 describe('startMutationCollection', () => {
   let sandbox: HTMLElement
   let stopMutationCollection: () => void
@@ -23,9 +26,15 @@ describe('startMutationCollection', () => {
     const mutationCallbackSpy = jasmine.createSpy<MutationCallBack>()
     const mutationController = new MutationController()
 
-    ;({ stop: stopMutationCollection } = startMutationObserver(mutationController, mutationCallbackSpy, {
-      defaultPrivacyLevel,
-    } as RumConfiguration))
+    ;({ stop: stopMutationCollection } = startMutationObserver(
+      mutationController,
+      mutationCallbackSpy,
+      {
+        defaultPrivacyLevel,
+      } as RumConfiguration,
+      document,
+      DEFAULT_LIFE_CYCLE
+    ))
 
     return {
       mutationController,
@@ -43,7 +52,8 @@ describe('startMutationCollection', () => {
       {
         status: SerializationContextStatus.INITIAL_FULL_SNAPSHOT,
         elementsScrollPositions: createElementsScrollPositions(),
-      }
+      },
+      DEFAULT_LIFE_CYCLE
     )
   }
 

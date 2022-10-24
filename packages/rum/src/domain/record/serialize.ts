@@ -1,6 +1,6 @@
 import { assign, startsWith } from '@datadog/browser-core'
-import type { RumConfiguration } from '@datadog/browser-rum-core'
-import { DEFAULT_PROGRAMMATIC_ACTION_NAME_ATTRIBUTE } from '@datadog/browser-rum-core'
+import type { LifeCycle, RumConfiguration } from '@datadog/browser-rum-core'
+import { LifeCycleEventType, DEFAULT_PROGRAMMATIC_ACTION_NAME_ATTRIBUTE } from '@datadog/browser-rum-core'
 import {
   NodePrivacyLevel,
   PRIVACY_ATTR_NAME,
@@ -62,18 +62,21 @@ export interface SerializeOptions {
   parentNodePrivacyLevel: ParentNodePrivacyLevel
   serializationContext: SerializationContext
   configuration: RumConfiguration
+  lifeCycle: LifeCycle
 }
 
 export function serializeDocument(
   document: Document,
   configuration: RumConfiguration,
-  serializationContext: SerializationContext
+  serializationContext: SerializationContext,
+  lifeCycle: LifeCycle
 ): SerializedNodeWithId {
   // We are sure that Documents are never ignored, so this function never returns null
   return serializeNodeWithId(document, {
     serializationContext,
     parentNodePrivacyLevel: configuration.defaultPrivacyLevel,
     configuration,
+    lifeCycle,
   })!
 }
 
@@ -146,6 +149,9 @@ export function serializeElementNode(element: Element, options: SerializeOptions
   const tagName = getValidTagName(element.tagName)
   const isSVG = isSVGElement(element) || undefined
   const isShadowHost = element.shadowRoot !== null || undefined
+  if (isShadowHost && element.shadowRoot) {
+    options.lifeCycle.notify(LifeCycleEventType.ADD_SHADOW_ROOT, element.shadowRoot)
+  }
 
   // For performance reason, we don't use getNodePrivacyLevel directly: we leverage the
   // parentNodePrivacyLevel option to avoid iterating over all parents
