@@ -12,6 +12,7 @@ import {
   FORM_PRIVATE_TAG_NAMES,
   CENSORED_STRING_MARK,
 } from '../../constants'
+import { isElement } from './node.typeGuards'
 
 export const MAX_ATTRIBUTE_VALUE_CHAR_LENGTH = 100_000
 
@@ -132,10 +133,6 @@ export function shouldMaskNode(node: Node, privacyLevel: NodePrivacyLevel) {
     default:
       return false
   }
-}
-
-function isElement(node: Node): node is Element {
-  return node.nodeType === node.ELEMENT_NODE
 }
 
 function isTextNode(node: Node): node is Text {

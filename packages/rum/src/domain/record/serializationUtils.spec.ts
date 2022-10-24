@@ -1,6 +1,12 @@
 import { isIE } from '@datadog/browser-core'
 import { NodePrivacyLevel } from '../../constants'
-import { getSerializedNodeId, hasSerializedNode, setSerializedNodeId, getElementInputValue } from './serializationUtils'
+import {
+  getSerializedNodeId,
+  hasSerializedNode,
+  setSerializedNodeId,
+  getElementInputValue,
+  getChildNodes,
+} from './serializationUtils'
 
 describe('serialized Node storage in DOM Nodes', () => {
   describe('hasSerializedNode', () => {
@@ -93,5 +99,36 @@ describe('getElementInputValue', () => {
       input.type = 'reset'
       expect(getElementInputValue(input, NodePrivacyLevel.MASK)).toBe('foo')
     })
+  })
+})
+
+describe('getChildNodes', () => {
+  it('should return the direct children for a normal node', () => {
+    const children: Node[] = [
+      document.createTextNode('toto'),
+      document.createElement('span'),
+      document.createComment('oops'),
+    ]
+    const container = document.createElement('div')
+    children.forEach((node) => {
+      container.appendChild(node)
+    })
+
+    expect(getChildNodes(container).length).toBe(children.length)
+  })
+  it('should return the children of the shadow root for a node that is a host', () => {
+    const children: Node[] = [
+      document.createTextNode('toto'),
+      document.createElement('span'),
+      document.createComment('oops'),
+    ]
+    const container = document.createElement('div')
+    container.attachShadow({ mode: 'open' })
+
+    children.forEach((node) => {
+      container.shadowRoot!.appendChild(node)
+    })
+
+    expect(getChildNodes(container).length).toBe(children.length)
   })
 })

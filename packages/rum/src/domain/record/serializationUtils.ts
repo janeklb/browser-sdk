@@ -1,5 +1,6 @@
 import type { NodePrivacyLevel } from '../../constants'
 import { CENSORED_STRING_MARK } from '../../constants'
+import { isElement } from './node.typeGuards'
 import { shouldMaskNode } from './privacy'
 
 export type NodeWithSerializedNode = Node & { s: 'Node with serialized node' }
@@ -68,4 +69,8 @@ export function getElementInputValue(element: Element, nodePrivacyLevel: NodePri
   }
 
   return value
+}
+
+export function getChildNodes(node: Node) {
+  return isElement(node) && node.shadowRoot ? node.shadowRoot.childNodes : node.childNodes
 }

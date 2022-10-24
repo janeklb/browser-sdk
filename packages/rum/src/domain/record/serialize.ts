@@ -25,7 +25,7 @@ import {
   getNodeSelfPrivacyLevel,
   MAX_ATTRIBUTE_VALUE_CHAR_LENGTH,
 } from './privacy'
-import { getSerializedNodeId, setSerializedNodeId, getElementInputValue } from './serializationUtils'
+import { getSerializedNodeId, setSerializedNodeId, getElementInputValue, getChildNodes } from './serializationUtils'
 import { forEach } from './utils'
 import type { ElementsScrollPositions } from './elementsScrollPositions'
 
@@ -145,6 +145,7 @@ function serializeDocumentTypeNode(documentType: DocumentType): DocumentTypeNode
 export function serializeElementNode(element: Element, options: SerializeOptions): ElementNode | undefined {
   const tagName = getValidTagName(element.tagName)
   const isSVG = isSVGElement(element) || undefined
+  const isShadowHost = element.shadowRoot !== null || undefined
 
   // For performance reason, we don't use getNodePrivacyLevel directly: we leverage the
   // parentNodePrivacyLevel option to avoid iterating over all parents
@@ -162,6 +163,7 @@ export function serializeElementNode(element: Element, options: SerializeOptions
       },
       childNodes: [],
       isSVG,
+      isShadowHost,
     }
   }
 
@@ -173,7 +175,7 @@ export function serializeElementNode(element: Element, options: SerializeOptions
   const attributes = getAttributesForPrivacyLevel(element, nodePrivacyLevel, options)
 
   let childNodes: SerializedNodeWithId[] = []
-  if (element.childNodes.length) {
+  if (getChildNodes(element).length) {
     // OBJECT POOLING OPTIMIZATION:
     // We should not create a new object systematically as it could impact performances. Try to reuse
     // the same object as much as possible, and clone it only if we need to.
@@ -195,6 +197,7 @@ export function serializeElementNode(element: Element, options: SerializeOptions
     attributes,
     childNodes,
     isSVG,
+    isShadowHost,
   }
 }
 
@@ -228,7 +231,7 @@ function serializeCDataNode(): CDataNode {
 export function serializeChildNodes(node: Node, options: SerializeOptions): SerializedNodeWithId[] {
   const result: SerializedNodeWithId[] = []
 
-  forEach(node.childNodes, (childNode) => {
+  forEach(getChildNodes(node), (childNode) => {
     const serializedChildNode = serializeNodeWithId(childNode, options)
     if (serializedChildNode) {
       result.push(serializedChildNode)
