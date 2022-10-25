@@ -1,6 +1,9 @@
+import type { RelativeTime, Duration } from '@datadog/browser-core'
 import { isIE, RequestType } from '@datadog/browser-core'
 import type { FetchStub, FetchStubManager } from '../../../core/test/specHelper'
 import { SPEC_ENDPOINTS, stubFetch, stubXhr, withXhr } from '../../../core/test/specHelper'
+import { createResourceEntry } from '../../test/fixtures'
+import { stubPerformanceObserver } from '../../test/specHelper'
 import type { RumConfiguration } from './configuration'
 import { validateAndBuildRumConfiguration } from './configuration'
 import { LifeCycle, LifeCycleEventType } from './lifeCycle'
@@ -55,8 +58,8 @@ describe('collect fetch', () => {
     window.onunhandledrejection = null
   })
 
-  it('should notify on request start', (done) => {
-    fetchStub(FAKE_URL).resolveWith({ status: 500, responseText: 'fetch error' })
+  it('should notify on request start', async (done) => {
+    await fetchStub(FAKE_URL).resolveWith({ status: 500, responseText: 'fetch error' })
 
     fetchStubManager.whenAllComplete(() => {
       expect(startSpy).toHaveBeenCalledWith({ requestIndex: jasmine.any(Number) as unknown as number, url: FAKE_URL })
@@ -64,8 +67,8 @@ describe('collect fetch', () => {
     })
   })
 
-  it('should notify on request complete', (done) => {
-    fetchStub(FAKE_URL).resolveWith({ status: 500, responseText: 'fetch error' })
+  it('should notify on request complete', async (done) => {
+    await fetchStub(FAKE_URL).resolveWith({ status: 500, responseText: 'fetch error' })
 
     fetchStubManager.whenAllComplete(() => {
       const request = completeSpy.calls.argsFor(0)[0]
@@ -78,8 +81,8 @@ describe('collect fetch', () => {
     })
   })
 
-  it('should assign a request id', (done) => {
-    fetchStub(FAKE_URL).resolveWith({ status: 500, responseText: 'fetch error' })
+  it('should assign a request id', async (done) => {
+    await fetchStub(FAKE_URL).resolveWith({ status: 500, responseText: 'fetch error' })
 
     fetchStubManager.whenAllComplete(() => {
       const startRequestIndex = startSpy.calls.argsFor(0)[0].requestIndex
@@ -90,8 +93,8 @@ describe('collect fetch', () => {
     })
   })
 
-  it('should ignore intake requests', (done) => {
-    fetchStub(SPEC_ENDPOINTS.rumEndpointBuilder.build()).resolveWith({ status: 200, responseText: 'foo' })
+  it('should ignore intake requests', async (done) => {
+    await fetchStub(SPEC_ENDPOINTS.rumEndpointBuilder.build()).resolveWith({ status: 200, responseText: 'foo' })
 
     fetchStubManager.whenAllComplete(() => {
       expect(startSpy).not.toHaveBeenCalled()
@@ -102,14 +105,21 @@ describe('collect fetch', () => {
 
   describe('tracing', () => {
     it('should trace requests by default', (done) => {
-      fetchStub(FAKE_URL).resolveWith({ status: 200, responseText: 'ok' })
+      const entry = createResourceEntry({ startTime: 150 as RelativeTime, duration: 100 as Duration })
+      let clear: (() => void) | null = null
+      fetchStub(FAKE_URL)
+        .resolveWith({ status: 200, responseText: 'ok' })
+        .then(() => {
+          const request = completeSpy.calls.argsFor(0)[0]
 
-      fetchStubManager.whenAllComplete(() => {
-        const request = completeSpy.calls.argsFor(0)[0]
+          expect(request.traceId).toBeDefined()
+          clear && clear()
+          done()
+        })
+        .catch(done.fail)
 
-        expect(request.traceId).toBeDefined()
-        done()
-      })
+      const cb = stubPerformanceObserver([entry])
+      clear = cb.clear
     })
 
     it('should trace aborted requests', (done) => {
@@ -123,8 +133,8 @@ describe('collect fetch', () => {
       })
     })
 
-    it('should not trace requests ending with status 0', (done) => {
-      fetchStub(FAKE_URL).resolveWith({ status: 0, responseText: 'fetch cancelled' })
+    it('should not trace requests ending with status 0', async (done) => {
+      await fetchStub(FAKE_URL).resolveWith({ status: 0, responseText: 'fetch cancelled' })
 
       fetchStubManager.whenAllComplete(() => {
         const request = completeSpy.calls.argsFor(0)[0]

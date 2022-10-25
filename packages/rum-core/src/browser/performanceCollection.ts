@@ -39,7 +39,6 @@ export interface RumPerformanceResourceTiming {
   decodedBodySize: number
   traceId?: string
 }
-
 export interface RumPerformanceLongTaskTiming {
   entryType: 'longtask'
   startTime: RelativeTime

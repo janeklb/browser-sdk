@@ -4,7 +4,6 @@ import { Observable } from '../tools/observable'
 import type { Duration, ClocksState } from '../tools/timeUtils'
 import { elapsed, clocksNow, timeStampNow } from '../tools/timeUtils'
 import { normalizeUrl } from '../tools/urlPolyfill'
-
 interface FetchContextBase {
   method: string
   startClocks: ClocksState
@@ -19,7 +18,7 @@ export interface FetchStartContext extends FetchContextBase {
 
 export interface FetchCompleteContext extends FetchContextBase {
   state: 'complete'
-  duration: Duration
+  resolveDuration: Duration
   status: number
   response?: Response
   responseType?: string
@@ -96,22 +95,20 @@ function afterSend(
   const reportFetch = (response: Response | Error) => {
     const context = startContext as unknown as FetchCompleteContext
     context.state = 'complete'
-    context.duration = elapsed(context.startClocks.timeStamp, timeStampNow())
+    context.resolveDuration = elapsed(context.startClocks.timeStamp, timeStampNow())
 
     if ('stack' in response || response instanceof Error) {
       context.status = 0
       context.isAborted = response instanceof DOMException && response.code === DOMException.ABORT_ERR
       context.error = response
-
-      observable.notify(context)
     } else if ('status' in response) {
       context.response = response
       context.responseType = response.type
       context.status = response.status
       context.isAborted = false
-
-      observable.notify(context)
     }
+    observable.notify(context)
   }
+
   responsePromise.then(monitor(reportFetch), monitor(reportFetch))
 }
