@@ -7,11 +7,11 @@ import {
   relativeToClocks,
   assign,
   isNumber,
+  addTelemetryDebug,
   elapsed,
   timeStampNow,
-  addTelemetryDebug,
 } from '@datadog/browser-core'
-import type { ClocksState } from '@datadog/browser-core'
+import type { ClocksState, Observable } from '@datadog/browser-core'
 import type { RumConfiguration } from '../../configuration'
 import type { RumPerformanceEntry, RumPerformanceResourceTiming } from '../../../browser/performanceCollection'
 import type {
@@ -26,45 +26,42 @@ import { LifeCycleEventType } from '../../lifeCycle'
 import type { RequestCompleteEvent } from '../../requestCollection'
 import type { RumSessionManager } from '../../rumSessionManager'
 import {
-  matchOnPerformanceObserverCallback,
-  matchOnPerformanceGetEntriesByName,
-} from './matchResponseToPerformanceEntry'
-import {
   computePerformanceResourceDetails,
   computePerformanceResourceDuration,
   computeResourceKind,
   computeSize,
   isRequestKind,
+  toValidEntry,
 } from './resourceUtils'
+
+import { filterEntries } from './filterEntries'
 
 export function startResourceCollection(
   lifeCycle: LifeCycle,
   configuration: RumConfiguration,
-  sessionManager: RumSessionManager
+  sessionManager: RumSessionManager,
+  performanceObserver: Observable<PerformanceEntry[]>
 ) {
   lifeCycle.subscribe(LifeCycleEventType.REQUEST_COMPLETED, (request: RequestCompleteEvent) => {
-    if (request.type === RequestType.XHR || request.status === 0) {
-      const matchingTiming = matchOnPerformanceGetEntriesByName(request)
-      lifeCycle.notify(
-        LifeCycleEventType.RAW_RUM_EVENT_COLLECTED,
-        processRequest(request, configuration, sessionManager, matchingTiming)
-      )
-    } else {
-      matchOnPerformanceObserverCallback(request)
-        .then((matchingTiming) => {
-          lifeCycle.notify(
-            LifeCycleEventType.RAW_RUM_EVENT_COLLECTED,
-            processRequest(request, configuration, sessionManager, matchingTiming)
+    const { unsubscribe } = performanceObserver.subscribe((entries) => {
+      const matchingTimings = filterEntries(entries, request)
+
+      if (matchingTimings.length > 0) {
+        if (matchingTimings.length > 1) addTelemetryDebug('Multiple performance entries matched')
+        const matchingTiming = matchingTimings[matchingTimings.length - 1]
+
+        lifeCycle.notify(
+          LifeCycleEventType.RAW_RUM_EVENT_COLLECTED,
+          processRequest(
+            request,
+            configuration,
+            sessionManager,
+            toValidEntry(matchingTiming) ? matchingTiming : undefined
           )
-        })
-        .catch(() => {
-          addTelemetryDebug('matchOnPerformanceObserverCallback threw error')
-          lifeCycle.notify(
-            LifeCycleEventType.RAW_RUM_EVENT_COLLECTED,
-            processRequest(request, configuration, sessionManager, undefined)
-          )
-        })
-    }
+        )
+        unsubscribe()
+      }
+    })
   })
 
   lifeCycle.subscribe(LifeCycleEventType.PERFORMANCE_ENTRIES_COLLECTED, (entries) => {
@@ -93,10 +90,14 @@ function processRequest(
   const tracingInfo = computeRequestTracingInfo(request, configuration)
   const indexingInfo = computeIndexingInfo(sessionManager, startClocks)
 
-  // Duration is not set when request is of type fetch.
-  // If the code reaches here it means PerformanceObserver has found matching PerformanceEntry(ies).
-  // Although ideal as a measurement, it better reflects the duration than fetchObservable's "afterSend"
-  // (which has been renamed to `resolveDuration`).
+  // "Duration" is not set when request is of type fetch. In that case we create
+  // a new duration variable based on the current time stamp.
+  //
+  // Why?
+  // This duration takes into account the response + payload time into account; unlike
+  // before where it did not take into account the payload download time. Measuring duration using
+  // JS is never going to be perfectly accurate thus why we favour correspondingTimingOverrides
+  // generated from matchingTiming (aka PerformanceEntries).
   const duration = request.duration ? request.duration : elapsed(request.startClocks.timeStamp, timeStampNow())
 
   const resourceEvent = combine(
