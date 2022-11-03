@@ -1,7 +1,7 @@
-import { restorePageVisibility, setPageVisibility } from '../../test/specHelper'
+import { createNewEvent, restorePageVisibility, setPageVisibility } from '../../test/specHelper'
 import type { Subscription } from '../tools/observable'
 import type { PageExitEvent } from './pageExitObservable'
-import { createPageExitObservable } from './pageExitObservable'
+import { PageExitReason, createPageExitObservable } from './pageExitObservable'
 
 describe('createPageExitObservable', () => {
   let pageExitSubscription: Subscription
@@ -18,26 +18,26 @@ describe('createPageExitObservable', () => {
   })
 
   it('notifies when the page is unloading', () => {
-    window.dispatchEvent(new Event('beforeunload'))
+    window.dispatchEvent(createNewEvent('beforeunload'))
 
-    expect(onExitSpy).toHaveBeenCalledOnceWith({ isUnloading: true })
+    expect(onExitSpy).toHaveBeenCalledOnceWith({ reason: PageExitReason.UNLOADING })
   })
 
   it('notifies when the page becomes hidden', () => {
     emulatePageVisibilityChange('hidden')
 
-    expect(onExitSpy).toHaveBeenCalledOnceWith({ isUnloading: false })
+    expect(onExitSpy).toHaveBeenCalledOnceWith({ reason: PageExitReason.HIDDEN })
   })
 
   it('notifies multiple times', () => {
-    window.dispatchEvent(new Event('beforeunload'))
-    window.dispatchEvent(new Event('beforeunload'))
+    window.dispatchEvent(createNewEvent('beforeunload'))
+    window.dispatchEvent(createNewEvent('beforeunload'))
     emulatePageVisibilityChange('hidden')
 
     expect(onExitSpy).toHaveBeenCalledTimes(3)
   })
 
-  it('does notify when the page becomes visible', () => {
+  it('does not notify when the page becomes visible', () => {
     emulatePageVisibilityChange('visible')
 
     expect(onExitSpy).not.toHaveBeenCalled()
@@ -45,6 +45,6 @@ describe('createPageExitObservable', () => {
 
   function emulatePageVisibilityChange(visibility: 'visible' | 'hidden') {
     setPageVisibility(visibility)
-    document.dispatchEvent(new Event('visibilitychange'))
+    document.dispatchEvent(createNewEvent('visibilitychange'))
   }
 })
