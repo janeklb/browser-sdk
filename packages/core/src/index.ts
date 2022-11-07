@@ -85,3 +85,4 @@ export {
   getSyntheticsTestId,
   getSyntheticsResultId,
 } from './domain/synthetics/syntheticsWorkerValues'
+export { User, checkUser, sanitizeUser } from './domain/user'
