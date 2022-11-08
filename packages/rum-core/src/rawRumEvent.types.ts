@@ -42,6 +42,7 @@ export interface RawRumResourceEvent {
     span_id?: string // not available for initial document tracing
     rule_psr?: number
     discarded: boolean
+    resolveDuration?: ServerDuration
   }
 }
 
