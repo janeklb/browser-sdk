@@ -7,8 +7,12 @@ import {
   relativeToClocks,
   assign,
   isNumber,
+  readBytesFromStream,
+  elapsed,
+  timeStampNow,
+  isExperimentalFeatureEnabled,
 } from '@datadog/browser-core'
-import type { ClocksState } from '@datadog/browser-core'
+import type { ClocksState, Duration } from '@datadog/browser-core'
 import type { RumConfiguration } from '../../configuration'
 import type { RumPerformanceEntry, RumPerformanceResourceTiming } from '../../../browser/performanceCollection'
 import type {
@@ -37,7 +41,12 @@ export function startResourceCollection(
   sessionManager: RumSessionManager
 ) {
   lifeCycle.subscribe(LifeCycleEventType.REQUEST_COMPLETED, (request: RequestCompleteEvent) => {
-    lifeCycle.notify(LifeCycleEventType.RAW_RUM_EVENT_COLLECTED, processRequest(request, configuration, sessionManager))
+    waitForResponseToFinish(request, () =>
+      lifeCycle.notify(
+        LifeCycleEventType.RAW_RUM_EVENT_COLLECTED,
+        processRequest(request, configuration, sessionManager)
+      )
+    )
   })
 
   lifeCycle.subscribe(LifeCycleEventType.PERFORMANCE_ENTRIES_COLLECTED, (entries) => {
@@ -50,6 +59,33 @@ export function startResourceCollection(
       }
     }
   })
+}
+
+function waitForResponseToFinish(request: RequestCompleteEvent, callback: () => void) {
+  if (request.duration !== undefined) {
+    callback()
+    return
+  }
+  if (request.response && isExperimentalFeatureEnabled('fetch_duration')) {
+    const responseClone = request.response.clone()
+    if (responseClone.body) {
+      readBytesFromStream(
+        responseClone.body,
+        () => {
+          request.duration = elapsed(request.startClocks.timeStamp, timeStampNow())
+          callback()
+        },
+        {
+          limit: Number.POSITIVE_INFINITY,
+          collectStreamBody: false,
+        }
+      )
+      return
+    }
+  } else {
+    request.duration = request.resolveDuration || elapsed(request.startClocks.timeStamp, timeStampNow())
+    callback()
+  }
 }
 
 function processRequest(
@@ -66,6 +102,13 @@ function processRequest(
   const tracingInfo = computeRequestTracingInfo(request, configuration)
   const indexingInfo = computeIndexingInfo(sessionManager, startClocks)
 
+  const durationDiff = request.resolveDuration
+    ? toServerDuration((request.duration - request.resolveDuration) as Duration)
+    : undefined
+  const durationPercentageDiff = durationDiff
+    ? Math.round((durationDiff / toServerDuration(request.duration)) * 100)
+    : undefined
+
   const resourceEvent = combine(
     {
       date: startClocks.timeStamp,
@@ -76,6 +119,11 @@ function processRequest(
         method: request.method,
         status_code: request.status,
         url: request.url,
+      },
+      _dd: {
+        durationDiff,
+        durationPercentageDiff,
+        resolveDuration: request.resolveDuration ? toServerDuration(request.resolveDuration) : undefined,
       },
       type: RumEventType.RESOURCE as const,
     },

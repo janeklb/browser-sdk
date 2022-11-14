@@ -1,6 +1,6 @@
 import type { RumResourceEvent } from '@datadog/browser-rum'
 import type { EventRegistry } from '../../lib/framework'
-import { flushEvents, bundleSetup, createTest, html } from '../../lib/framework'
+import { flushEvents, bundleSetup, createTest, html, LARGE_RESPONSE_MIN_BYTE_SIZE } from '../../lib/framework'
 import { browserExecuteAsync, sendXhr } from '../../lib/helpers/browser'
 
 const REQUEST_DURATION = 200
@@ -194,7 +194,46 @@ describe('rum resources', () => {
         expect(resourceEvent).toBeTruthy()
         expect(resourceEvent?.resource.status_code).toBe(0)
       })
+
+    createTest('aborting a request stops the response download')
+      .withLogs({ forwardErrorsToLogs: true })
+      .withRum()
+      .run(async ({ servers }) => {
+        await browserExecuteAsync((done) => {
+          const controller = new AbortController()
+          const signal = controller.signal
+
+          fetch('/large-response', { signal }).then(() => {
+            controller.abort()
+            done(undefined)
+          }, console.log)
+        })
+
+        await flushEvents()
+        expect(servers.base.app.getLargeResponseWroteSize()).toBeLessThan(LARGE_RESPONSE_MIN_BYTE_SIZE)
+      })
   })
+
+  createTest('track redirect fetch timings')
+    .withRum()
+    .run(async ({ serverEvents }) => {
+      await browserExecuteAsync((done) => {
+        fetch('/redirect?duration=200').then(
+          () => done(undefined),
+          () => {
+            throw Error('Issue with fetch call')
+          }
+        )
+      })
+      await flushEvents()
+      const resourceEvent = serverEvents.rumResources.find((r) => r.resource.url.includes('/redirect'))!
+      expect(resourceEvent).not.toBeUndefined()
+      expect(resourceEvent.resource.method).toEqual('GET')
+      expect(resourceEvent.resource.status_code).toEqual(200)
+      expectToHaveValidTimings(resourceEvent)
+      expect(resourceEvent.resource.redirect).not.toBeUndefined()
+      expect(resourceEvent.resource.redirect!.duration).toBeGreaterThan(0)
+    })
 
   describe('support XHRs with same XMLHttpRequest instance', () => {
     createTest('track XHRs when calling requests one after another')
